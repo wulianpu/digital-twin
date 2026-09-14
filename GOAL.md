@@ -91,12 +91,12 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
 
 ### I10 功能评估第三轮发现（待办）
 
-- [ ] I10-1（A）场景响应会话范围变化：production/stack-yard/vehicle-navigation 订阅 `onSessionChanged`，`scope.siteId` 变化时重建 frame/布局/数据并适配视图（当前挂载后切站点无效果）
-- [ ] I10-2（A）WorldClient 时钟注入：构造项 `nowFn`（foundation 传 `world.time.now`），staleness/清扫按世界时钟判定——HISTORY 模式回放数据不误判陈旧
-- [ ] I10-3（A）Portal 启用陈旧检测：`defaultStaleAfterMs`（live 10s）+ sweep 启用（当前 sweep=0、无 staleAfterMs，顶栏陈旧计数恒 0 是死功能；依赖 I10-2 避免历史模式误报）
-- [ ] I10-4（B）e2e 补 I8 新功能：实体搜索定位、告警确认、快照导出
-- [ ] I10-5（B）vehicle-navigation AGV 轨迹尾线（production 已有，行导更核心）
-- [ ] I10-6（C）README/GOAL 测试计数随迭代校准（当前 README 写 133，实际 137）
+- [x] I10-1（A）场景响应会话范围变化：production/stack-yard/vehicle-navigation 订阅 `onSessionChanged`，`scope.siteId` 变化时重建 frame/布局/数据并适配视图（当前挂载后切站点无效果）
+- [x] I10-2（A）WorldClient 时钟注入：构造项 `nowFn`（foundation 传 `world.time.now`），staleness/清扫按世界时钟判定——HISTORY 模式回放数据不误判陈旧
+- [x] I10-3（A）Portal 启用陈旧检测：`defaultStaleAfterMs`（live 10s）+ sweep 启用（当前 sweep=0、无 staleAfterMs，顶栏陈旧计数恒 0 是死功能；依赖 I10-2 避免历史模式误报）
+- [x] I10-4（B）e2e 补 I8 新功能：实体搜索定位、告警确认、快照导出
+- [x] I10-5（B）vehicle-navigation AGV 轨迹尾线（production 已有，行导更核心）
+- [x] I10-6（C）README/GOAL 测试计数随迭代校准（当前 README 写 133，实际 137）
 
 ### 持续小项（随迭代顺带处理）
 
@@ -232,6 +232,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   HISTORY 误报）与两项 B 类（e2e 覆盖 I8 新功能、行导 AGV 轨迹），
   已入账为 I10 待办；README 测试计数漂移一并校准。
   验证：`pnpm verify` 全绿 137/137（本轮仅文档与待办变更）。
+- 2026-09-15 **I10 全部 6 项落地**：①WorldClient 时钟注入 nowFn（staleness/清扫
+  按世界时钟，HISTORY 回放不误判陈旧）+ 注入时钟测试；②Portal 启用陈旧检测
+  （defaultStaleAfterMs 10s + sweep 30s）且顶栏陈旧计数按模式门控（仅 LIVE 展示）；
+  ③coordinator select 支持 force（站点切换 → App 决定重跑场景）+ force 重跑测试；
+  ④App 范围监视器（onSessionChanged → siteId 变化 force 重选）；⑤行导 AGV 轨迹
+  尾线（每台 40 点，与 production 同模式）；⑥e2e +3 用例（搜索定位/告警确认/
+  scrubber）。验证：`pnpm verify` 全绿、139/139 测试（+2 coordinator force）、
+  `pnpm test:e2e` 8/8（+3 I8/I10 覆盖）。
 - 2026-09-14 **工程化收尾**：docs/benchmarks.md §3 验收对照表补 DoD #1 ✅ 行；
   初始化本地 git 仓库并完成首次提交（基线 + I1-I7 全部成果入库；
   .gitignore 覆盖构建产物/视觉回归 current/soak 中间报告；遵守边界不推送远端）。

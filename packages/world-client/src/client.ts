@@ -16,6 +16,12 @@ export interface WorldClientOptions {
   defaultStaleAfterMs?: number
   /** Sweeper interval for staleness checks; 0 disables. */
   sweepIntervalMs?: number
+  /**
+   * 世界时钟注入（I10-2）：staleness/清扫按该时钟判定。默认 Date.now；
+   * foundation 传世界时钟后，HISTORY/SIMULATION 模式的回放数据按虚拟时间
+   * 判定陈旧，不会误报。
+   */
+  now?: () => number
 }
 
 export interface DataApi {
@@ -59,8 +65,10 @@ export class WorldClient implements DataApi {
   private readonly active = new Set<ActiveSubscription>()
   private sweepTimer: ReturnType<typeof setInterval> | undefined
   private disposed = false
+  private readonly now: () => number
 
   constructor(private readonly options: WorldClientOptions) {
+    this.now = options.now ?? (() => Date.now())
     for (const source of options.sources) {
       this.sources.set(source.kind, source)
     }
@@ -225,7 +233,7 @@ export class WorldClient implements DataApi {
     if (e.revision !== undefined) sub.delivered.set(e.key, e.revision)
     const effective =
       sub.staleAfterMs !== Number.POSITIVE_INFINITY &&
-      e.sourceTime + sub.staleAfterMs < Date.now() &&
+      e.sourceTime + sub.staleAfterMs < this.now() &&
       e.quality === 'good'
         ? { ...e, quality: 'stale' as const }
         : e
@@ -250,10 +258,11 @@ export class WorldClient implements DataApi {
   }
 
   private sweepStale(): void {
-    const now = Date.now()
+    const now = this.now()
+    const window = this.options.defaultStaleAfterMs ?? 60_000
     for (const byKey of this.cache.values()) {
       for (const [key, e] of byKey) {
-        if (e.quality === 'good' && now - e.sourceTime > 60_000) {
+        if (e.quality === 'good' && now - e.sourceTime > window) {
           byKey.set(key, { ...e, quality: 'stale' })
         }
       }

@@ -71,3 +71,31 @@ test('权限强制：guest 无法进入生产场景', async ({ page }) => {
     timeout: 10_000
   })
 })
+
+test('全局实体搜索定位（I8-5/I10-4）', async ({ page }) => {
+  await signIn(page)
+  const input = page.getByPlaceholder('搜索实体')
+  await input.fill('沪舟')
+  await expect(page.locator('.portal-search-results')).toBeVisible({ timeout: 10_000 })
+  await page.locator('.portal-search-item').first().click()
+  // 选择后搜索框清空、壳层保持正常
+  await expect(input).toHaveValue('')
+  await expect(page.locator('.portal-sidebar')).toBeVisible()
+})
+
+test('告警确认与快照导出按钮存在（I8-4/I8-7）', async ({ page }) => {
+  await signIn(page)
+  await page.locator('[data-scene-id="production"]').click()
+  await expect(page.locator('.prod-panel')).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('[data-export-snapshot]')).toBeVisible()
+  // 若当前有告警则确认第一项（面板保持正常）
+  const ack = page.locator('[data-ack-alarm]').first()
+  if (await ack.isVisible().catch(() => false)) await ack.click()
+  await expect(page.locator('.prod-panel')).toBeVisible()
+})
+
+test('HISTORY 时间线 scrubber 可见（I9-6/I10）', async ({ page }) => {
+  await signIn(page)
+  await page.getByRole('banner').getByRole('button', { name: 'HISTORY' }).click()
+  await expect(page.locator('.portal-scrub')).toBeVisible({ timeout: 10_000 })
+})

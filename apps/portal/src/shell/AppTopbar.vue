@@ -121,7 +121,7 @@ const QUALITIES: QualityProfile[] = ['OFFICE', 'STANDARD', 'HIGH', 'EXHIBITION']
       :title="`${CONN_HINT[conn.state]}；本地陈旧数据 ${conn.staleCount} 项${mapIssues.length > 0 ? `；底图异常 ${mapIssues.length} 条（文字标注可能不可用）` : ''}`"
     >
       <span class="portal-conn-dot" />
-      {{ CONN_LABEL[conn.state] }}<template v-if="conn.staleCount > 0"> · {{ conn.staleCount }} 项陈旧</template><template v-if="mapIssues.length > 0"> · 底图异常</template>
+      {{ CONN_LABEL[conn.state] }}<template v-if="session.worldMode === 'live' && conn.staleCount > 0"> · {{ conn.staleCount }} 项陈旧</template><template v-if="mapIssues.length > 0"> · 底图异常</template>
     </div>
 
     <div class="portal-search" data-entity-search>

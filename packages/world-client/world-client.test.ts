@@ -106,6 +106,31 @@ describe('WorldClient', () => {
     client.dispose()
   })
 
+  it('staleness 按注入的世界时钟判定（I10-2）', () => {
+    let fakeNow = 1_000_000
+    const live = createScriptedSource({ kind: 'live' })
+    const client = new WorldClient({
+      sources: [live],
+      sweepIntervalMs: 0,
+      now: () => fakeNow
+    })
+    const seen: string[] = []
+    client.subscribe(
+      { contract: 'twin.test@1' },
+      (e) => seen.push(e.quality),
+      { staleAfterMs: 1000 }
+    )
+    // 数据时间 = 虚拟当前 → good
+    live.emit([envelope({ sourceTime: fakeNow })])
+    expect(seen).toEqual(['good'])
+    // 虚拟时钟推进 2s（超过 1s 窗口）→ 同步刻的老数据判 stale
+    fakeNow += 2_000
+    live.emit([envelope({ key: 'e/9', sourceTime: fakeNow - 2_000 })])
+    expect(seen).toEqual(['good', 'stale'])
+    expect(client.countStale()).toBe(1)
+    client.dispose()
+  })
+
   it('countStale 统计降级信封（I3-3 降级可见）', () => {
     const live = createScriptedSource({ kind: 'live' })
     const client = new WorldClient({ sources: [live], sweepIntervalMs: 0 })

@@ -55,13 +55,21 @@ export class SceneCoordinator {
     void definition?.load().catch(() => {})
   }
 
-  async select(sceneId: SceneId): Promise<void> {
+  async select(sceneId: SceneId, options: { force?: boolean } = {}): Promise<void> {
     const definition = this.get(sceneId)
     if (!definition) {
       this.options.onError?.(new Error(`unknown scene "${sceneId}"`), sceneId)
       return
     }
-    if (this._state.kind === 'active' && this._state.sceneId === sceneId) return
+    // force：会话范围（站点）变化时，App 决定重跑当前场景（§"App decides
+    // what to run"）——绕过同场景守卫，仍走完整切换事务（§11）。
+    if (
+      !options.force &&
+      this._state.kind === 'active' &&
+      this._state.sceneId === sceneId
+    ) {
+      return
+    }
 
     // I2-2: 强制权限边界——无权限时绝不触碰 load / host.mount。
     if (

@@ -19,6 +19,15 @@ const viewMode = ref<ViewMode>('map')
 
 const rootEl = ref<InstanceType<typeof TwinViewport> | null>(null)
 
+// I10-1: 会话范围（站点）变化 → App 决定重跑当前场景（§"App decides what
+// to run"）——场景内部不自行重建，由组合根强制重挂（与合规 Site A/B 轮一致）。
+let lastScopeKey: string | undefined
+let scopeDisposable: { dispose(): void } | undefined
+
+function scopeKeyOf(scope: { kind: string; siteId?: string }): string {
+  return scope.kind === 'site' ? `site:${scope.siteId}` : scope.kind
+}
+
 function retryActive(): void {
   const target = session.activeSceneId ?? (route.params.sceneId as string | undefined)
   if (target) void coordinator.select(target)
@@ -36,6 +45,17 @@ onMounted(() => {
   // I7 修复：ViewApi 主驱动默认跟随地图（此前从未设置，focus/setTarget 为空操作）
   foundation.workspace.setPrimary('map')
   coordinator.preload('global-ships')
+  // I10-1: 范围变化 → force 重选当前场景
+  lastScopeKey = scopeKeyOf(foundation.world.session.scope)
+  scopeDisposable = foundation.world.onSessionChanged((session) => {
+    const key = scopeKeyOf(session.scope)
+    if (key === lastScopeKey) return
+    lastScopeKey = key
+    const target = coordinator.activeSceneId ?? (route.params.sceneId as string | undefined)
+    if (target && isKnownScene(target)) {
+      void coordinator.select(target, { force: true })
+    }
+  })
   // I5: URL 参数驱动的性能采集 / soak / context loss 演练（生产访问不受影响）
   setupPerfAutomation(foundation, coordinator)
   // S1: 场景内视图切换 → 壳层视图模式联动（DOM 事件，场景保持应用无关）
@@ -71,6 +91,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  scopeDisposable?.dispose()
   foundation.dispose()
 })
 </script>

@@ -112,3 +112,36 @@ describe('SceneCoordinator 回滚路径（§10/§11，I7 补强）', () => {
     expect(order).toEqual(['unmount-current', 'mount-target'])
   })
 })
+
+describe('force 重选（I10-1：站点切换重跑场景）', () => {
+  it('同场景 + force → 完整重跑（卸载旧挂载并重新挂载）', async () => {
+    const { host, calls } = (() => {
+      const calls: string[] = []
+      const host = {
+        unmount: vi.fn(async () => {
+          calls.push('unmount')
+          return { errors: [], timedOut: false }
+        }),
+        mount: vi.fn(async (_e: unknown, o: { sceneId?: string }) => {
+          calls.push(`mount:${o.sceneId}`)
+          return {
+            state: 'active',
+            sceneId: o.sceneId,
+            done: Promise.resolve({ errors: [], timedOut: false }),
+            unmount: async () => ({ errors: [], timedOut: false })
+          } as unknown as HostMount
+        })
+      }
+      return { host: host as unknown as SceneHost, calls }
+    })()
+    const coordinator = new SceneCoordinator(host, SCENE_CATALOG, {
+      permissions: () => ['scene:production', 'scene:simulation']
+    })
+
+    await coordinator.select('production')
+    expect(coordinator.state.kind).toBe('active')
+    await coordinator.select('production', { force: true })
+    expect(coordinator.state.kind).toBe('active')
+    expect(calls.filter((c) => c.startsWith('mount')).length).toBe(2)
+  })
+})

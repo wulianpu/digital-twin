@@ -139,9 +139,13 @@ export function buildFoundation(
   }
   const { history: historySource, simulation: simulationSource } = createHistorySimulationSources()
 
+  // I10-3：启用陈旧检测——staleness/清扫按世界时钟判定（HISTORY/SIMULATION
+  // 模式下回放数据按虚拟时间判定，不会误报），顶栏「N 项陈旧」随之生效。
   const data = new WorldClient({
     sources: [liveSource, historySource, simulationSource],
-    sweepIntervalMs: 0
+    defaultStaleAfterMs: 10_000,
+    sweepIntervalMs: 30_000,
+    now: () => world.time.now().epochMillis
   })
 
   // B2：业务名称搜索提供者（演示网关注册船名索引；生产由数据层注册）。
