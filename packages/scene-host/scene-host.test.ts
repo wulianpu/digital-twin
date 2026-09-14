@@ -134,16 +134,18 @@ describe('SceneHost lifecycle', () => {
     expect(captured!.signal.aborted).toBe(true)
   })
 
-  it('captures mount failures and tears down instead of throwing', async () => {
+  it('mount 失败：cleanup 兜底后向调用方 reject（问题1 契约）', async () => {
     const onError = vi.fn()
     const { host } = makeHost({ onError })
-    const mount = await host.mount({
+    const mountPromise = host.mount({
       mount: async () => {
         throw new Error('nope')
       }
     })
-    expect(mount.state).toBe('unmounted')
+    // 问题1：失败不被吞掉——cleanup 完成后原始错误重新抛出
+    await expect(mountPromise).rejects.toThrow('nope')
     expect(onError).toHaveBeenCalledWith(expect.any(Error), 'mount')
+    expect(host.contextState).toBe('revoked')
   })
 
   it('auto-unmounts a previous mount when mounting a new scene', async () => {

@@ -93,6 +93,11 @@ const entry: SceneEntry = {
             register: (entity, object) => ctx.graphics!.currentContext!.entities.register(entity, object)
           })
           graphicsBooting = false
+          if (ctx.signal.aborted) {
+            graphicsHandle.dispose()
+            graphicsHandle = undefined
+            return
+          }
           graphicsHandle.updateShips(states)
         }
         mapHandle?.suspend()

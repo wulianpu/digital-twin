@@ -1,7 +1,19 @@
-import type { SceneContext, SceneEntry, SceneMount, SceneId } from '@twin/sdk'
+import type { SceneContext, SceneEntry, SceneId, SceneMount } from '@twin/sdk'
 import type { Disposable } from '@twin/world'
 import { UiApiImpl } from './ui'
-import { createRevocableContext, type ContextServices, type ContextState } from './context'
+import { MountScope } from './scope'
+import {
+  scopedAssetApi,
+  scopedDataApi,
+  scopedGraphicsAccess,
+  scopedMapAccess,
+  scopedUiApi
+} from './scoped'
+import {
+  createRevocableContext,
+  type ContextServices,
+  type ContextState
+} from './context'
 
 export interface SceneViewport {
   /** Container for scene UI layers; may resolve lazily (apps mount late). */
@@ -34,13 +46,19 @@ export interface HostMount extends Omit<SceneMount, 'unmount'> {
 }
 
 /**
- * SceneHost is the ONLY lifecycle owner for scenes (§9):
- * - creates the mount runtime (AbortController + scoped context)
- * - aborts work on unmount start ("abort cancels work")
- * - revokes the context after teardown ("revoke prevents stale writes")
- * - unmount is idempotent (§12.1), exception-safe (§12.2), time-bounded (§12.3)
+ * SceneHost is the ONLY lifecycle owner for scenes (§9, Issue #1)：
  *
- * The host understands nothing about business semantics.
+ * teardown 事务（严格顺序）：
+ *   1. MountScope.close()   拒绝创建新资源
+ *   2. AbortController      abort 取消进行中工作
+ *   3. Scene unmount        （限时竞速，§12.3）
+ *   4. MountScope.dispose() Host 兜底释放 tracked 资源
+ *   5. UI layers 清理
+ *   6. context revoke       拒绝一切后续访问
+ *
+ * mount 失败契约（问题1）：entry.mount() 抛错 → cleanup 完成后**重新抛出**
+ * 原始错误——Coordinator 据此进入 ERROR 并可回滚，绝不会把失败 mount
+ * commit 成 ACTIVE。
  */
 export class SceneHost {
   private current: HostMountImpl | undefined
@@ -66,7 +84,7 @@ export class SceneHost {
     }
     const impl = new HostMountImpl(this.options, entry, mountOptions.sceneId ?? 'scene')
     this.current = impl
-    await impl.start()
+    await impl.start() // 问题1：失败在此处 reject（cleanup 已由 impl 保证）
     return impl
   }
 
@@ -87,6 +105,7 @@ class HostMountImpl implements HostMount {
 
   private controller = new AbortController()
   private ui: UiApiImpl
+  private readonly scope = new MountScope()
   private revocable: ReturnType<typeof createRevocableContext> | undefined
   private mountImpl: SceneMount | undefined
   private readonly mutableResult: { errors: unknown[]; timedOut: boolean } = {
@@ -129,26 +148,38 @@ class HostMountImpl implements HostMount {
       this.mountImpl = await this.entry.mount(context)
       this.state = 'active'
     } catch (error) {
-      this.onError?.(error, 'mount')
       this.mutableResult.errors.push(error)
+      this.onError?.(error, 'mount')
+      // 问题1：cleanup（含 scoped 资源兜底 + revoke）完成后重新抛出——
+      // Coordinator 据此进入 ERROR，不会把失败 mount commit 成 ACTIVE。
       await this.teardown()
+      throw error
     }
   }
 
-  /** Idempotent, exception-safe, time-bounded teardown (§12). */
   async unmount(): Promise<MountResult> {
     if (this.state === 'unmounting') return this.done
-    if (this.state === 'unmounted') return this.mutableResult
+    if (this.state === 'unmounted') return this.result
     await this.teardown()
     return this.mutableResult
   }
 
+  /** Idempotent, exception-safe, time-bounded teardown（§12，严格顺序见类注释）。 */
   private async teardown(): Promise<void> {
+    if (this.state === 'unmounting' || this.state === 'unmounted') {
+      // 并发/重复 teardown：等待既有序列完成
+      await this.done
+      return
+    }
     this.state = 'unmounting'
-    // Abort cancels work (§13)...
+
+    // 1. 拒绝创建新资源（close 后 subscribe/acquire/createLayer/use 抛错）
+    this.scope?.close()
+
+    // 2. abort 取消进行中工作（§13）
     this.controller.abort()
 
-    let timedOut = false
+    // 3. Scene unmount：限时竞速（§12.3）；异常安全（§12.2）
     if (this.mountImpl) {
       const sceneUnmount = this.runSceneUnmount(this.mountImpl)
       const timeout =
@@ -160,7 +191,6 @@ class HostMountImpl implements HostMount {
           : new Promise<never>(() => {})
       const outcome = await Promise.race([sceneUnmount, timeout])
       if (outcome === 'timeout') {
-        timedOut = true
         this.mutableResult.timedOut = true
         this.onError?.(
           new Error(`scene "${this.sceneId}" unmount exceeded ${this.deadlineMs}ms deadline`),
@@ -170,14 +200,16 @@ class HostMountImpl implements HostMount {
       this.mountImpl = undefined
     }
 
-    // ...then Host-owned cleanup always runs (§12.2)...
-    this.hostCleanup()
+    // 4. Host 兜底释放 scoped tracked 资源（无论 Scene cleanup 成功/throw/超时）
+    this.scope?.dispose()
 
-    // ...and the context is revoked so stale callbacks cannot write (§13).
+    // 5. UI layers（Foundation-owned）
+    this.ui.disposeAll()
+
+    // 6. revoke：拒绝一切后续访问（§13）
     this.revocable?.revoke()
     this.state = 'unmounted'
     this.resolveDone(this.mutableResult)
-    void timedOut
   }
 
   private async runSceneUnmount(mount: SceneMount): Promise<'scene-done'> {
@@ -190,21 +222,29 @@ class HostMountImpl implements HostMount {
     return 'scene-done'
   }
 
-  private hostCleanup(): void {
-    // UI layers are Foundation-owned: remove leftovers.
-    this.ui.disposeAll()
-  }
-
-  /** Hosts may track foundation-owned disposables for guaranteed cleanup. */
+  /** Host 兜底登记（供测试/诊断）。 */
   track(label: string, disposable: Disposable): Disposable {
     void label
     return disposable
   }
 
   private buildContext(): SceneContext {
+    const services = this.options.services
     this.revocable = createRevocableContext(
       this.sceneId,
-      { ...this.options.services, ui: this.ui },
+      {
+        world: services.world,
+        spatial: services.spatial,
+        data: scopedDataApi(services.data, this.scope),
+        assets: scopedAssetApi(services.assets, this.scope),
+        selection: services.selection,
+        view: services.view,
+        ui: scopedUiApi(this.ui, this.scope),
+        map: services.map ? scopedMapAccess(services.map, this.scope) : undefined,
+        graphics: services.graphics
+          ? scopedGraphicsAccess(services.graphics, this.scope)
+          : undefined
+      } as ContextServices,
       this.controller.signal
     )
     return this.revocable.context

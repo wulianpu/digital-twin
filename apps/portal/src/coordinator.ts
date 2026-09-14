@@ -92,28 +92,67 @@ export class SceneCoordinator {
     this.loadControllers.set(sceneId, loadController)
 
     this.setState({ kind: 'loading', target: sceneId })
+
+    // 问题4（§19）：切换前保存 previous——目标 mount 失败时可恢复 previous scene
+    const previous =
+      this._state.kind === 'active'
+        ? { definition: this.get(this._state.sceneId)!, sceneId: this._state.sceneId }
+        : undefined
+
+    let entry
     try {
-      const entry = await definition.load()
+      entry = await definition.load()
       if (generation !== this.generation) return // superseded
+    } catch (loadError) {
+      // load 失败（dynamic import/网络）：无副作用产生，直接 ERROR
+      this.loadControllers.delete(sceneId)
+      this.options.onError?.(loadError, sceneId)
+      this.setState({ kind: 'error', sceneId, error: loadError })
+      return
+    }
 
-      // UNMOUNT CURRENT → MOUNT TARGET (host enforces §12 teardown rules).
-      await this.host.unmount()
-      if (generation !== this.generation) return
+    // UNMOUNT CURRENT → MOUNT TARGET (host enforces §12 teardown rules).
+    await this.host.unmount()
+    if (generation !== this.generation) return
 
-      const mount = await this.host.mount(entry, { sceneId })
+    let mount: HostMount
+    try {
+      mount = await this.host.mount(entry, { sceneId })
+      if (mount.state !== 'active') {
+        throw new Error(`scene "${sceneId}" did not reach active state`)
+      }
       if (generation !== this.generation) {
         await mount.unmount()
         return
       }
-
+    } catch (mountError) {
+      // 问题4：真回滚——目标 mount 失败后尝试恢复 previous scene；
+      // Last Selection Wins：generation 变化时过期回滚不得执行。
+      if (previous && generation === this.generation) {
+        try {
+          const prevEntry = await previous.definition.load()
+          const prevMount = await this.host.mount(prevEntry, {
+            sceneId: previous.sceneId
+          })
+          this.loadControllers.delete(sceneId)
+          this.setState({ kind: 'active', sceneId: previous.sceneId, mount: prevMount })
+          this.options.onError?.(mountError, sceneId)
+          return
+        } catch (rollbackError) {
+          this.loadControllers.delete(sceneId)
+          this.options.onError?.(rollbackError, previous.sceneId)
+          this.setState({ kind: 'error', sceneId, error: rollbackError })
+          return
+        }
+      }
       this.loadControllers.delete(sceneId)
-      this.setState({ kind: 'active', sceneId, mount })
-    } catch (error) {
-      this.loadControllers.delete(sceneId)
-      if (generation !== this.generation) return // superseded failure: ignore
-      this.options.onError?.(error, sceneId)
-      this.setState({ kind: 'error', sceneId, error })
+      this.options.onError?.(mountError, sceneId)
+      this.setState({ kind: 'error', sceneId, error: mountError })
+      return
     }
+
+    this.loadControllers.delete(sceneId)
+    this.setState({ kind: 'active', sceneId, mount })
   }
 
   private setState(state: CoordinatorState): void {

@@ -56,6 +56,7 @@ export interface ComplianceOptions {
   framesPerCycle?: number
   /** Alternate the world scope site A/B before each mount (Gate #5). */
   alternateSites?: boolean
+  unmountDeadlineMs?: number
 }
 
 export type EntryLoader = () => Promise<unknown>
@@ -118,7 +119,7 @@ export async function runComplianceCycles(
         map: mapAccess,
         graphics: graphicsAccess
       },
-      unmountDeadlineMs: 2000,
+      unmountDeadlineMs: options.unmountDeadlineMs ?? 2000,
       onError: (error) => {
         report.errors.push(error)
       }

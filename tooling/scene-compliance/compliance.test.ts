@@ -104,6 +104,35 @@ describe('Gate #5: Site A / Site B alternation plateaus', () => {
   }, 40_000)
 })
 
+describe('Hostile scene compliance（Issue #1 问题5）', () => {
+  const HOSTILE_FIXTURES = [
+    { id: 'hostile:forget-data-sub', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetDataSubscription) },
+    { id: 'hostile:forget-asset-lease', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetAssetLease) },
+    { id: 'hostile:forget-frame-callback', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetFrameCallback) },
+    { id: 'hostile:forget-pick-callback', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetPickCallback) },
+    { id: 'hostile:unmount-throws', load: () => import('./fixtures/hostile-scenes').then(m => m.unmountThrows) },
+    { id: 'hostile:zombie-cached-context', load: () => import('./fixtures/hostile-scenes').then(m => m.zombieCachedContext) },
+  ]
+
+  it.each(HOSTILE_FIXTURES.map(f => [f.id, f.load] as const))(
+    '%s: Host 兜底回收全部资源',
+    async (sceneId, load) => {
+      const report = await runComplianceCycles(sceneId, load, { cycles: 2, framesPerCycle: 5 })
+      // Host 兜底：即使 scene 忘记清理，Host 也能回收全部
+      expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
+    },
+    15_000
+  )
+
+  it('unmount-hangs：deadline 兜底后 baseline', async () => {
+    const report = await runComplianceCycles('hostile:unmount-hangs', async () => {
+      return import('./fixtures/hostile-scenes').then(m => m.unmountHangs)
+    }, { cycles: 2, framesPerCycle: 5, unmountDeadlineMs: 500 })
+    // 超时后 Host 仍然完成 teardown
+    expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
+  }, 15_000)
+})
+
 describe('Gate #2: production 2D ↔ 3D toggle ×100', () => {
   it('toggles 100 times with the scene mounted once', async () => {
     const result = await runToggleStress('production', () => import('@twin/scene-production'), 100)

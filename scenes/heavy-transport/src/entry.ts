@@ -143,6 +143,11 @@ const entry: SceneEntry = {
           const { mountGraphics } = await import('./graphics')
           graphicsHandle = await mountGraphics(ctx, plan)
           graphicsBooting = false
+          if (ctx.signal.aborted) {
+            graphicsHandle.dispose()
+            graphicsHandle = undefined
+            return
+          }
           // Scene-private preview loop (§28) — the engine's frame loop is
           // the ONLY animation entry (§21); progress is scene state.
           ctx.graphics!.currentContext!.onFrame(({ deltaSeconds, elapsedSeconds }) => {

@@ -9,6 +9,7 @@ import type {
   GraphicsContext,
   MapAccess,
   MapContext,
+  AssetLease,
   PickEvent,
   SubscribeOptions,
   WaterState
@@ -334,9 +335,24 @@ export class MockDataApi implements DataApi {
 }
 
 export class MockAssetApi implements AssetApi {
-  leaseCount = 0
+  private readonly leases = new Map<string, { release(): void }>()
 
-  async acquire(): Promise<never> {
-    throw new Error('[compliance] scenes must not acquire assets in the base cycle')
+  get leaseCount(): number {
+    return this.leases.size
+  }
+
+  async acquire(ref: { id: string; version?: string }): Promise<AssetLease> {
+    const key = `${ref.id}@${ref.version ?? '0'}`
+    const lease = {
+      ref,
+      version: ref.version ?? '0',
+      object: {} as unknown,
+      estimatedBytes: 128,
+      release: () => {
+        this.leases.delete(key)
+      }
+    }
+    this.leases.set(key, lease)
+    return lease
   }
 }

@@ -44,13 +44,21 @@ export function createGraphicsAccess(options: SceneEngineOptions): GraphicsAcces
     get currentContext() {
       return runtimes.get(access)?.context
     },
-    use() {
-      if (state === 'DISPOSED') {
-        return Promise.reject(new Error('[scene-engine] access disposed'))
-      }
-      bootPromise ??= boot()
-      return bootPromise.then((rt) => rt.context)
-    },
+  /**
+   * 问题3：每次 use() 交付独立 mount root 的 GraphicsContext——
+   * Scene unmount/throw/timeout 时宿主可无条件 detach 该 mount root。
+   * 其余能力（camera/renderer/environment/entities）为引擎级共享。
+   */
+  use() {
+    if (state === 'DISPOSED') {
+      return Promise.reject(new Error('[scene-engine] access disposed'))
+    }
+    bootPromise ??= boot()
+    return bootPromise.then((rt) => {
+      const mount = rt.createMountRoot()
+      return { ...rt.context, root: mount.root }
+    })
+  },
     applyQuality(profile: QualityProfile) {
       runtimes.get(access)?.adaptive.force(profile)
     },

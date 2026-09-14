@@ -97,6 +97,13 @@ const entry: SceneEntry = {
             const [namespace, id] = key.split('/')
             return ctx.graphics!.currentContext!.entities.register({ namespace, id }, object)
           })
+          // 问题6：late bootstrap——unmount 后完成的异步引导立即自毁
+          if (ctx.signal.aborted) {
+            graphicsHandle.dispose()
+            graphicsHandle = undefined
+            graphicsBooting = false
+            return
+          }
           graphicsBooting = false
           for (const [code, s] of craneStates) graphicsHandle.applyCraneState(code, s)
         }

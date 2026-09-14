@@ -3,6 +3,15 @@
  */
 
 export { SceneHost } from './host'
+export { MountScope, SceneScopeClosedError } from './scope'
+export type { MountScopeState } from './scope'
+export {
+  scopedDataApi,
+  scopedAssetApi,
+  scopedUiApi,
+  scopedMapAccess,
+  scopedGraphicsAccess
+} from './scoped'
 export type {
   SceneHostOptions,
   SceneViewport,

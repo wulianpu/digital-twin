@@ -90,6 +90,13 @@ const entry: SceneEntry = {
           graphicsHandle = await mountGraphics(ctx, layout, {
             onPickStack: (code) => applySelection(code ?? undefined)
           })
+          // 问题6：late bootstrap——unmount 后完成的异步引导立即自毁
+          if (ctx.signal.aborted) {
+            graphicsHandle.dispose()
+            graphicsHandle = undefined
+            graphicsBooting = false
+            return
+          }
           graphicsBooting = false
         }
         mapHandle?.suspend()

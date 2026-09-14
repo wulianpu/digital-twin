@@ -39,6 +39,8 @@ export interface EngineRuntime {
   readonly environment: EnvironmentSystem
   readonly earth: GlobalEarthSystem | undefined
   readonly adaptive: AdaptiveQuality
+  /** 问题3：为当前 mount 创建独立 SceneMountRoot（detach = 无条件脱离场景图）。 */
+  createMountRoot(): { root: THREE.Group; detach(): void }
   suspend(): void
   resume(): void
   dispose(): void
@@ -73,9 +75,11 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
   baseWorldRoot.name = 'BaseWorldRoot'
   scene.add(baseWorldRoot)
 
-  const root = new THREE.Group()
-  root.name = 'SceneMountRoot'
-  scene.add(root)
+  // 问题3：per-mount SceneMountRoot 容器——每个 mount 独立 root，
+  // teardown 时可无条件 detach（§25 / Issue #1 问题3）。
+  const sceneRoots = new THREE.Group()
+  sceneRoots.name = 'SceneRoots'
+  scene.add(sceneRoots)
 
   // Site mode: near/far tuned for meter-scale sites. Global mode: km units.
   const camera = new THREE.PerspectiveCamera(
@@ -115,7 +119,7 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
 
   const picking = new PickingSystem(
     renderer.domElement,
-    () => root,
+    () => sceneRoots,
     () => camera
   )
 
@@ -158,7 +162,7 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
         worldOffset.y -= p.y
         worldOffset.z -= p.z
         baseWorldRoot.position.copy(worldOffset)
-        root.position.copy(worldOffset)
+        sceneRoots.position.copy(worldOffset)
       }
       camera.position.set(p.x + worldOffset.x, p.y + worldOffset.y, p.z + worldOffset.z)
     }
@@ -215,7 +219,8 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
   }
 
   const context: GraphicsContext = {
-    root,
+    // 共享 context 的 root 指向 SceneRoots 容器（含全部挂载根）
+    root: sceneRoots,
     renderScene: scene,
     camera,
     renderer,
@@ -272,6 +277,13 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
 
   frameLoop.start()
 
+  const createMountRoot = (): { root: THREE.Group; detach(): void } => {
+    const root = new THREE.Group()
+    root.name = `SceneMountRoot(${sceneRoots.children.length + 1})`
+    sceneRoots.add(root)
+    return { root, detach: () => root.removeFromParent() }
+  }
+
   return {
     context,
     orbit,
@@ -281,6 +293,7 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     environment,
     earth,
     adaptive,
+    createMountRoot,
     suspend: () => context.suspend(),
     resume: () => context.resume(),
     dispose: () => {
@@ -294,7 +307,7 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
       environment.dispose()
       earth?.dispose()
       baseWorldRoot.clear()
-      root.clear()
+      sceneRoots.clear()
       scene.clear()
       renderer.dispose()
       renderer.domElement.remove()
