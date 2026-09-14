@@ -17,10 +17,12 @@ export default defineConfig({
       args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']
     }
   },
+  // 对生产构建（vite preview）执行：更接近真实部署，且无 dev 依赖优化开销。
+  // 运行前需先构建：pnpm --filter @twin/portal build（e2e workflow 已包含）。
   webServer: {
-    command: 'pnpm --filter @twin/portal dev -- --port 5173 --strictPort --host 127.0.0.1',
+    command: 'pnpm --filter @twin/portal exec vite preview --port 5173 --strictPort --host 127.0.0.1',
     url: 'http://127.0.0.1:5173',
     reuseExistingServer: true,
-    timeout: 180_000 // CI 冷启动 + 首次依赖优化可能较慢
+    timeout: 120_000
   }
 })
