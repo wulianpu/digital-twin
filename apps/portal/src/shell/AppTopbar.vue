@@ -16,12 +16,26 @@ const session = useSessionStore()
 const conn = ref<ConnectionState>({ state: 'local', staleCount: 0 })
 // S2: 底图/style 异常（glyphs 不可达时文字标注降级）可见化。
 const mapIssues = ref<readonly string[]>([])
+// B3: 历史时间线 scrubber（环范围拖动 → clock.seek → 回放即时推进）
+const histRange = ref<{ start: number; end: number }>({ start: 0, end: 0 })
+const scrubMs = ref(0)
 const connPoll = setInterval(() => {
   conn.value = foundation.connection()
   mapIssues.value = foundation.mapAccess.currentContext?.styleIssues() ?? []
+  if (session.worldMode !== 'live') {
+    histRange.value = foundation.historyRange()
+    scrubMs.value = foundation.world.time.now().epochMillis
+  }
 }, 2000)
 connPoll.unref?.()
 onBeforeUnmount(() => clearInterval(connPoll))
+
+function onScrubInput(event: Event): void {
+  const v = Number((event.target as HTMLInputElement).value)
+  if (!Number.isFinite(v) || v <= 0) return
+  foundation.world.clock.seek(v)
+  foundation.tick()
+}
 
 const CONN_LABEL: Record<ConnectionState['state'], string> = {
   local: '演示数据',
@@ -31,16 +45,20 @@ const CONN_LABEL: Record<ConnectionState['state'], string> = {
 }
 // B2: 全局实体搜索（缓存键）→ 选中 + 定位
 const searchTerm = ref('')
-const results = ref<Array<{ contract: string; key: string }>>([])
+const results = ref<Array<{ contract: string; key: string; label?: string }>>([])
 
 function onSearchInput(): void {
   results.value = foundation.searchEntities(searchTerm.value, 8)
 }
 
-function pickResult(item: { contract: string; key: string }): void {
+function pickResult(item: { contract: string; key: string; label?: string }): void {
   const [namespace, id] = item.key.split('/')
   const entity = { namespace, id }
   foundation.selection.setPrimary(entity)
+  // 预热缓存并定位（contract 随结果携带）
+  void foundation.data
+    .query({ contract: item.contract, keys: [item.key] })
+    .catch(() => {})
   void foundation.view.focus(entity)
   searchTerm.value = ''
   results.value = []
@@ -138,6 +156,16 @@ const QUALITIES: QualityProfile[] = ['OFFICE', 'STANDARD', 'HIGH', 'EXHIBITION']
       >
         {{ m.label }}
       </button>
+      <input
+        v-if="session.worldMode !== 'live' && histRange.end > 0"
+        class="portal-scrub"
+        type="range"
+        :min="histRange.start"
+        :max="histRange.end"
+        :value="scrubMs"
+        title="历史时间线拖动"
+        @input="onScrubInput"
+      />
       <input
         v-if="session.worldMode !== 'live'"
         class="portal-speed"
@@ -329,6 +357,11 @@ const QUALITIES: QualityProfile[] = ['OFFICE', 'STANDARD', 'HIGH', 'EXHIBITION']
 
 .portal-speed {
   width: 90px;
+  margin-left: 6px;
+}
+
+.portal-scrub {
+  width: 220px;
   margin-left: 6px;
 }
 

@@ -79,6 +79,16 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
 - [x] I7-4 补测试：coordinator 切换失败回滚（error 态/重试恢复/§11 事务顺序）+ 演示网关契约覆盖（全契约信封/快路径/历史环/revision 增长）
 - [x] I7-5 清理：standalone bootstrap 死三元、eslint config 以 .mjs 消除 Node 警告
 
+### I9 功能与验收工具完善（第二轮评估后新增）
+
+- [x] I9-1（A1）`?soak` 通道接入 `soakIntervalSec` → SoakDriver 轮间隔（修复"73s 间隔未生效，1152 轮 29 分钟跑完"）
+- [x] I9-2（A2）soak-run.mjs 健壮化重写：node 侧逐轮驱动（hash 导航切场景 + 页面单步接口），连续失败自动中止、页面异常自动重建重登；修复 5 项 lint/参数问题
+- [x] I9-3（A3）AGV 路网与展示路网统一单一事实源（domains/agv/demoRoutes.ts，场景 + portal 网关 + standalone 演示数据三处同源）
+- [x] I9-4（B1）assessRouteRisk 支持运输件包络半径（clearance = 距离 − 包络）+ 测试
+- [x] I9-5（B2）搜索支持业务名称：foundation 注册式搜索提供者（网关注册船名索引）+ 搜索结果展示 label
+- [x] I9-6（B3）顶栏 HISTORY 时间线 scrubber：拖动环范围 → clock.seek 即时回放推进
+- [x] I9-7 验证：`pnpm verify` 全绿 137/137 测试、`pnpm test:e2e` 5/5、interval 参数实测（2 轮 × 3s 间隔 duration 3097ms）
+
 ### 持续小项（随迭代顺带处理）
 
 - [x] S1 场景内视图切换与壳层视图开关联动（消除双开关缝隙）
@@ -191,6 +201,17 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   AGV 轨迹尾线（production 2D 最近 30 点）、业务状态快照导出（JSON 下载）、
   ViewApi 主驱动联动（setPrimary 随场景视图切换）。
   验证：`pnpm verify` 全绿、135/135 测试（+2：A1 回放推进 + live 源隔离）。
+- 2026-09-14 **I9 功能与验收工具完善（第二轮评估驱动，全部 7 项）**：
+  `?soak` 通道接入轮间隔（A1——修复"1152 轮 29 分钟跑完"的间隔未接线缺陷）；
+  soak-run.mjs 健壮化重写为 **node 侧逐轮驱动**（hash 导航切场景 + 页面单步
+  接口 + 连续失败中止 + 页面异常自动重建重登，24h 真跑的健壮性前提）；
+  AGV 路网统一单一事实源（domains/agv/demoRoutes.ts——行车导航展示路网与
+  演示网关 AGV 路线三处同源，AGV 沿显示道路行驶）；assessRouteRisk 支持
+  运输件包络半径；搜索支持业务名称（gateway 船名提供者 + foundation 合并 +
+  顶栏结果展示）；HISTORY 时间线 scrubber（拖动环范围即时回放推进）。
+  验证：`pnpm verify` 全绿、137/137 测试（+2）、`pnpm test:e2e` 5/5、
+  interval 参数实测（2 轮 × 3s 间隔 duration 3097ms）、对生产镜像 8080
+  实跑 5 轮步进通过。
 - 2026-09-14 **工程化收尾**：docs/benchmarks.md §3 验收对照表补 DoD #1 ✅ 行；
   初始化本地 git 仓库并完成首次提交（基线 + I1-I7 全部成果入库；
   .gitignore 覆盖构建产物/视觉回归 current/soak 中间报告；遵守边界不推送远端）。

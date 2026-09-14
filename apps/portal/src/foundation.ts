@@ -73,8 +73,17 @@ export interface PortalFoundation {
   config: PortalConfig
   /** 单次 tick：驱动演示网关 / HISTORY 回放推进 / 模式同步（测试与定时器共用）。 */
   tick(): void
-  /** 全局实体搜索（WorldClient 缓存键，I7/B2）。 */
-  searchEntities(term: string, limit?: number): Array<{ contract: string; key: string }>
+  /** 全局实体搜索：缓存键 + 已注册名称提供者合并（B2）。 */
+  searchEntities(
+    term: string,
+    limit?: number
+  ): Array<{ contract: string; key: string; label?: string }>
+  /** 注册业务名称搜索提供者（Domain/网关侧提供可搜索字段）。 */
+  registerSearchProvider(
+    fn: (term: string) => Array<{ key: string; label: string }>
+  ): void
+  /** 历史环范围（时间线 scrubber 边界）。 */
+  historyRange(): { start: number; end: number }
   connection(): ConnectionState
   workspace: {
     setContainers(c: ViewportContainers): void
@@ -134,6 +143,33 @@ export function buildFoundation(
     sources: [liveSource, historySource, simulationSource],
     sweepIntervalMs: 0
   })
+
+  // B2：业务名称搜索提供者（演示网关注册船名索引；生产由数据层注册）。
+  const searchProviders: Array<(term: string) => Array<{ key: string; label: string }>> = [
+    (term) => gateway.searchVesselsByName(term)
+  ]
+
+  function searchEntitiesMerged(
+    term: string,
+    limit = 8
+  ): Array<{ contract: string; key: string; label?: string }> {
+    const merged: Array<{ contract: string; key: string; label?: string }> = []
+    const seen = new Set<string>()
+    const push = (contract: string, key: string, label?: string) => {
+      if (seen.has(key) || merged.length >= limit) return
+      seen.add(key)
+      merged.push({ contract, key, label })
+    }
+    for (const provider of searchProviders) {
+      try {
+        for (const r of provider(term)) push('', r.key, r.label)
+      } catch (error) {
+        console.warn('[portal] search provider failed', error)
+      }
+    }
+    for (const r of data.search(term, limit)) push(r.contract, r.key)
+    return merged
+  }
 
   // Spatial Fast Path adapter (§35): AGV envelopes feed the shared state
   // buffer OUTSIDE any reactive system; the engine reads at frame boundaries.
@@ -326,7 +362,13 @@ export function buildFoundation(
     config,
     tick: foundationTick,
     searchEntities(term: string, limit = 8) {
-      return data.search(term, limit)
+      return searchEntitiesMerged(term, limit)
+    },
+    registerSearchProvider(fn: (term: string) => Array<{ key: string; label: string }>) {
+      searchProviders.push(fn)
+    },
+    historyRange() {
+      return gateway.historyRange()
     },
     connection(): ConnectionState {
       const ws = configuredLiveSource

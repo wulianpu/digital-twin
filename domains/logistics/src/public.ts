@@ -50,7 +50,9 @@ export interface RouteRisk {
 
 export function assessRouteRisk(
   point: { x: number; y: number },
-  zones: readonly ExclusionZone[]
+  zones: readonly ExclusionZone[],
+  /** 运输件包络半径（米）：大件不应只测中心点（B1）。 */
+  envelopeRadiusMeters = 0
 ): RouteRisk {
   let best: RouteRisk = { zoneId: undefined, clearanceMeters: Number.POSITIVE_INFINITY, violating: false }
   for (const zone of zones) {
@@ -59,7 +61,7 @@ export function assessRouteRisk(
       best = {
         zoneId: zone.id,
         clearanceMeters: d,
-        violating: d < zone.radiusMeters
+        violating: d < zone.radiusMeters + envelopeRadiusMeters
       }
     }
   }

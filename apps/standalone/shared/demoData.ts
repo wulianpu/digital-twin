@@ -3,6 +3,7 @@ import { VESSEL_CONTRACT } from '@twin/domain-vessel'
 import { CRANE_CONTRACT, simulateCrane } from '@twin/domain-crane'
 import { AGV_CONTRACT, simulateAgvOnRoute } from '@twin/domain-agv'
 import { STACK_CONTRACT } from '@twin/domain-logistics'
+import { DEMO_AGV_LOOP } from '@twin/domain-agv'
 import type { Site } from '@twin/world'
 
 export interface StandaloneDemoSource {
@@ -11,16 +12,8 @@ export interface StandaloneDemoSource {
   dispose(): void
 }
 
-const AGV_ROUTE = [
-  { x: -450, y: 240 },
-  { x: 430, y: 240 },
-  { x: 430, y: -320 },
-  { x: 60, y: -320 },
-  { x: 60, y: -430 },
-  { x: -240, y: -430 },
-  { x: -240, y: -200 },
-  { x: -450, y: -200 }
-]
+// A3：与行车导航场景展示路网同源
+const AGV_ROUTE = DEMO_AGV_LOOP
 
 /** Compact in-app gateway for standalone demos (platform gateway in production). */
 export function createDemoDataSource(site: Site): StandaloneDemoSource {

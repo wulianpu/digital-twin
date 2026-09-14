@@ -17,6 +17,7 @@ import {
   PRODUCTION_TASK_CONTRACT,
   type AlarmSeverity
 } from '@twin/domain-production'
+import { DEMO_AGV_LOOP } from '@twin/domain-agv'
 import { SITE_CHANGEXING } from './sites'
 
 export interface DemoGateway {
@@ -27,6 +28,9 @@ export interface DemoGateway {
   tick(mode: 'live' | 'simulation', timeMs: number): void
   /** Build a replay source from the recorded history ring. */
   buildHistorySource(): ReplaySource
+  /** B2：按业务名称搜索船舶（供 foundation.searchEntities 合并）。 */
+  searchVesselsByName(term: string, limit?: number): Array<{ key: string; label: string }>
+  historyRange(): { start: number; end: number }
   dispose(): void
 }
 
@@ -37,16 +41,8 @@ const CRANE_BASES = [
   { code: 'CRANE-003', gantryTrackMeters: 380, boomHeadingDeg: 0 },
   { code: 'CRANE-004', gantryTrackMeters: 380, boomHeadingDeg: 0 }
 ]
-const AGV_ROUTE = [
-  { x: -450, y: 240 },
-  { x: 430, y: 240 },
-  { x: 430, y: -320 },
-  { x: 60, y: -320 },
-  { x: 60, y: -430 },
-  { x: -240, y: -430 },
-  { x: -240, y: -200 },
-  { x: -450, y: -200 }
-]
+// A3：AGV 沿行车导航场景展示的主干道环线行驶（单一事实源）
+const AGV_ROUTE = DEMO_AGV_LOOP
 
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0
@@ -273,6 +269,20 @@ export function createDemoGateway(): DemoGateway {
         })),
         loop: true
       })
+    },
+    /** B2：按业务名称搜索船舶（演示数据静态名称表）。 */
+    searchVesselsByName(term, limit = 4) {
+      const q = term.trim().toLowerCase()
+      if (!q) return []
+      return VESSEL_SEEDS.filter((v) => v.name.toLowerCase().includes(q))
+        .slice(0, limit)
+        .map((v) => ({ key: `ais/${v.mmsi}`, label: `${v.name}（船舶）` }))
+    },
+    /** 历史环范围（时间线 scrubber 边界）。 */
+    historyRange() {
+      return historyRing.length > 0
+        ? { start: historyRing[0].timeMs, end: historyRing[historyRing.length - 1].timeMs }
+        : { start: 0, end: 0 }
     },
     dispose() {
       live.dispose()

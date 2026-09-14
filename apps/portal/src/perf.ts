@@ -16,6 +16,9 @@ declare global {
     __twinSoakReport?: SoakReport
     __twinContextLossReport?: Record<string, unknown>
     __twinDebug?: Record<string, unknown>
+    /** A2: node 侧逐轮驱动（单轮场景切换 + heap 采样） */
+    __twinSoakStep?: () => Promise<number | undefined>
+    __twinSoakReset?: () => void
   }
 }
 
@@ -119,6 +122,8 @@ export function setupPerfAutomation(
 
   if (params.has('soak')) {
     const cycles = Number(params.get('soakCycles') ?? 20) || 20
+    // A1 修复：轮间隔接线（此前 73s 间隔未生效，1152 轮 29 分钟跑完）
+    const intervalSec = Number(params.get('soakIntervalSec') ?? 0)
     void (async () => {
       await delay(4000)
       const scenes = ['global-ships', 'stack-yard'] as const
@@ -128,13 +133,29 @@ export function setupPerfAutomation(
           await coordinator.select(scenes[cycle % scenes.length])
           await delay(1500)
         },
-        sampleHeap: heapMB
+        sampleHeap: heapMB,
+        ...(intervalSec > 0 ? { cycleIntervalMs: intervalSec * 1000 } : {})
       })
       const report = await driver.run()
       window.__twinSoakReport = report
       console.info('[perf] soak 完成', report.plateau)
       if (params.has('download')) downloadJson(`soak-${cycles}.json`, report)
     })()
+  }
+
+  // A2: node 侧逐轮驱动接口（soak-run.mjs 崩溃恢复式 24h 执行器）
+  if (params.has('soakStep')) {
+    let stepScene = 0
+    window.__twinSoakStep = async () => {
+      const scenes = ['global-ships', 'stack-yard'] as const
+      await coordinator.select(scenes[stepScene % scenes.length])
+      stepScene++
+      await delay(1500)
+      return heapMB()
+    }
+    window.__twinSoakReset = () => {
+      stepScene = 0
+    }
   }
 
   if (params.has('contextLoss')) {

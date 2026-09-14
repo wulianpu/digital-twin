@@ -99,3 +99,11 @@ export function simulateAgvOnRoute(
     taskId: `TASK-${(lap % 8) + 1}`
   }
 }
+
+// 演示路网（A3 单一事实源）
+export {
+  DEMO_MAIN_ROAD,
+  DEMO_DOCK_ROAD,
+  DEMO_YARD_ROAD,
+  DEMO_AGV_LOOP
+} from './demoRoutes'

@@ -1,7 +1,7 @@
 import type { Site } from '@twin/world'
 import type { ReferenceFrame } from '@twin/spatial'
 import { frameLocalToGeodetic } from '@twin/spatial'
-import type { Vec2 } from '@twin/domain-agv'
+import { DEMO_DOCK_ROAD, DEMO_MAIN_ROAD, DEMO_YARD_ROAD, type Vec2 } from '@twin/domain-agv'
 
 /**
  * Deterministic in-plant route network for the demo site. All geometry is
@@ -42,23 +42,10 @@ function toLngLat(frame: ReferenceFrame, p: Vec2): [number, number] {
 export function createNavigationLayout(site: Site, frame: ReferenceFrame): NavigationLayout {
   const rng = mulberry32(site.id.length * 7919 + 42)
 
-  const mainRoad: Vec2[] = [
-    { x: -400, y: -250 },
-    { x: 200, y: -250 },
-    { x: 420, y: -120 },
-    { x: 420, y: 180 }
-  ]
-  const dockRoad: Vec2[] = [
-    { x: 200, y: -250 },
-    { x: 200, y: 60 },
-    { x: 40, y: 160 },
-    { x: -300, y: 160 }
-  ]
-  const yardRoad: Vec2[] = [
-    { x: -400, y: -250 },
-    { x: -430, y: 40 },
-    { x: -300, y: 160 }
-  ]
+  // A3：路网单一事实源——展示路网与演示网关的 AGV 路线共用同一常量
+  const mainRoad: Vec2[] = DEMO_MAIN_ROAD
+  const dockRoad: Vec2[] = DEMO_DOCK_ROAD
+  const yardRoad: Vec2[] = DEMO_YARD_ROAD
   const routes: NavigationRoute[] = [
     { key: 'route-main', name: '主干道', waypoints: mainRoad },
     { key: 'route-dock', name: '码头航线', waypoints: dockRoad },
