@@ -4,13 +4,15 @@ import type { GraphicsAccess } from '@twin/sdk'
 import type { MountScope } from './scope'
 
 /**
- * Scoped capability wrappers（Issue #1 / 问题2）：
+ * Scoped capability wrappers（Issue #1 / 问题2 + Issue #3 修复）：
  *
  * - 创建入口（subscribe / acquire / createLayer / use / onFrame / onPick）
  *   在 MountScope 非 active 时抛 SceneScopeClosedError——
  *   即使 Scene 在 mount 时缓存了 capability 引用，unmount 后也无法
  *   创建新的 subscription / lease / callback（zombie write 防线）；
- * - 创建成功的资源经 scope.track 登记，Host 兜底释放；
+ * - 创建成功的资源**立即**经 scope.track 登记到 MountScope——
+ *   Host 兜底释放不依赖 Scene 手工清理；
+ * - `dispose()` 不暴露给 Scene——引擎/Map 生命周期归 Composition Root（§81）；
  * - 其余调用透明透传（§15：只封装生命周期，不重造引擎 API）。
  */
 
@@ -20,15 +22,16 @@ export function scopedDataApi(inner: DataApi, scope: MountScope): DataApi {
     subscribe: (query, cb, options) => {
       scope.assertCanCreate('data.subscribe')
       const sub = inner.subscribe(query, cb, options)
-      // Host 兜底 dispose（Scene 手工 dispose 幂等）
-      return { query: sub.query, dispose: () => scope.track({ dispose: () => sub.dispose() }).dispose() }
+      // 创建成功时立即 track——Host 兜底 dispose 不依赖 Scene 手工清理
+      scope.track(sub)
+      return sub
     },
     peek: (contract, key) => inner.peek(contract, key),
     get mode() {
       return inner.mode
     },
     setMode: (mode) => inner.setMode(mode),
-    dispose: () => inner.dispose()
+    dispose: () => { /* no-op: 生命周期归 Composition Root（§81） */ }
   }
 }
 
@@ -76,7 +79,7 @@ export function scopedMapAccess(inner: MapAccess, scope: MountScope): MapAccess 
       scope.assertCanCreate('map.use')
       return inner.use()
     },
-    dispose: () => inner.dispose()
+    dispose: () => { /* no-op: 生命周期归 Composition Root（§81） */ }
   }
 }
 
@@ -94,22 +97,36 @@ export function scopedGraphicsAccess(
     use: async () => {
       scope.assertCanCreate('graphics.use')
       const ctx = await inner.use()
-      // 问题6：late resolve——use() 调用发生在 close 之前、解析在 close 之后时，
+      // 问题6：late resolve——use() 调用在 close 之前、解析在 close 之后时，
       // 挂载根立即脱离场景，不留 zombie graphics root。
       if (scope.state !== 'active') {
-        // 问题6：late resolve——返回 detached root（不可见、无 zombie 写入），
-        // GPU 资源由 compliance / diagnostics 事后发现
         detachRoot(ctx.root)
       }
       // 问题3：per-mount root 的 detach 由 scope 兜底（Scene 忘记 remove 也逃不出）
       scope.track({ dispose: () => detachRoot(ctx.root) })
-      return { ...ctx, root: ctx.root }
+      return {
+        ...ctx,
+        root: ctx.root,
+        // 问题3 修复：onFrame/onPick 创建时立即纳入 MountScope
+        onFrame: (cb) => {
+          scope.assertCanCreate('graphics.onFrame')
+          const d = ctx.onFrame(cb)
+          scope.track(d)
+          return d
+        },
+        onPick: (cb) => {
+          scope.assertCanCreate('graphics.onPick')
+          const d = ctx.onPick(cb)
+          scope.track(d)
+          return d
+        }
+      }
     },
     applyQuality: (profile) => inner.applyQuality(profile),
     suspend: () => inner.suspend(),
     resume: () => inner.resume(),
     getDiagnostics: () => inner.getDiagnostics(),
-    dispose: () => inner.dispose()
+    dispose: () => { /* no-op: 生命周期归 Composition Root（§81） */ }
   }
 }
 
@@ -120,4 +137,3 @@ function detachRoot(root: { removeFromParent?(): void }): void {
     // 引擎已销毁时忽略
   }
 }
-

@@ -9,7 +9,6 @@ import type {
   GraphicsContext,
   MapAccess,
   MapContext,
-  AssetLease,
   PickEvent,
   SubscribeOptions,
   WaterState
@@ -341,7 +340,7 @@ export class MockAssetApi implements AssetApi {
     return this.leases.size
   }
 
-  async acquire(ref: { id: string; version?: string }): Promise<AssetLease> {
+  async acquire(ref: { id: string; version?: string }): Promise<{ ref: { id: string; version?: string }; version: string; object: unknown; estimatedBytes: number; release(): void }> {
     const key = `${ref.id}@${ref.version ?? '0'}`
     const lease = {
       ref,

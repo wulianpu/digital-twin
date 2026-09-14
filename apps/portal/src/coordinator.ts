@@ -91,13 +91,14 @@ export class SceneCoordinator {
     const loadController = new AbortController()
     this.loadControllers.set(sceneId, loadController)
 
-    this.setState({ kind: 'loading', target: sceneId })
-
-    // 问题4（§19）：切换前保存 previous——目标 mount 失败时可恢复 previous scene
+    // 问题4：previous snapshot 必须在 setState(loading) **之前**保存——
+    // setState 之后 _state.kind 变为 'loading'，previous 永远取不到
     const previous =
       this._state.kind === 'active'
         ? { definition: this.get(this._state.sceneId)!, sceneId: this._state.sceneId }
         : undefined
+
+    this.setState({ kind: 'loading', target: sceneId })
 
     let entry
     try {
