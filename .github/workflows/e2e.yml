@@ -1,0 +1,29 @@
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    # I6-1: 浏览器端冒烟（登录/场景切换/2D↔3D/世界模式/权限强制）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --filter @twin/tooling-e2e exec playwright install --with-deps chromium
+
+      - name: Run E2E smoke
+        run: pnpm --filter @twin/tooling-e2e test

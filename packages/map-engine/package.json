@@ -1,0 +1,16 @@
+{
+  "name": "@twin/map-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/public.ts"
+  },
+  "dependencies": {
+    "@twin/sdk": "workspace:*",
+    "@twin/spatial": "workspace:*",
+    "@twin/world": "workspace:*",
+    "@twin/world-client": "workspace:*",
+    "maplibre-gl": "6.9.0"
+  }
+}

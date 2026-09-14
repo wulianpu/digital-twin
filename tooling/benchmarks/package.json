@@ -1,0 +1,16 @@
+{
+  "name": "@twin/tooling-benchmarks",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@twin/spatial": "workspace:*",
+    "@twin/world-client": "workspace:*"
+  },
+  "devDependencies": {
+    "tinybench": "^4.0.0"
+  }
+}

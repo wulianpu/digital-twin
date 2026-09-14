@@ -1,0 +1,45 @@
+{
+  "name": "twin-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev:portal": "pnpm --filter @twin/portal dev",
+    "dev:stack-yard": "pnpm --filter @twin/standalone-stack-yard dev",
+    "dev:production": "pnpm --filter @twin/standalone-production dev",
+    "dev:vehicles": "pnpm --filter @twin/standalone-vehicle-navigation dev",
+    "build": "pnpm -r --filter './apps/**' build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "pnpm --filter @twin/tooling-e2e test",
+    "test:architecture": "vitest run tooling/architecture-tests",
+    "test:compliance": "vitest run tooling/scene-compliance",
+    "bench": "vitest run tooling/benchmarks",
+    "soak": "node tooling/perf/scripts/soak-run.mjs --url http://localhost:8080 --cycles 1152 --cycleIntervalSec 73 --out soak-24h.json",
+    "check:2d-only": "node tooling/architecture-tests/scripts/check-2d-only.mjs",
+    "check:exports": "node tooling/architecture-tests/scripts/check-package-exports.mjs",
+    "validate:assets": "node tooling/asset-pipeline/scripts/validate-manifests.mjs",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:exports && pnpm build && pnpm check:2d-only",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/geojson": "^7946.0.16",
+    "@types/node": "^24.0.0",
+    "@vitejs/plugin-vue": "6.0.8",
+    "eslint": "^9.39.4",
+    "eslint-plugin-vue": "^9.33.0",
+    "globals": "^15.15.0",
+    "jsdom": "30.0.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.70.0",
+    "vite": "8.3.0",
+    "vitest": "5.0.0",
+    "vue": "3.5.42",
+    "vue-tsc": "3.3.11"
+  }
+}

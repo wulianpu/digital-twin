@@ -1,0 +1,101 @@
+import type { Disposable } from '@twin/world'
+import type { DataSource } from '../source'
+import type { DataEnvelope, DataQuery } from '../types'
+
+export interface ScriptedTickContext {
+  /** Wall or virtual time in milliseconds. */
+  timeMs: number
+  /** Number of ticks since start. */
+  index: number
+}
+
+export interface ScriptedSourceOptions {
+  kind: 'live' | 'history' | 'simulation'
+  /** Optional initial snapshot contents. */
+  initial?: readonly DataEnvelope[]
+  /** Called on every `emit()` / interval tick; returns fresh envelopes. */
+  generate?: (ctx: ScriptedTickContext) => readonly DataEnvelope[]
+}
+
+export interface ScriptedSource extends DataSource {
+  /** Push a batch immediately to all matching subscribers. */
+  emit(envelopes: readonly DataEnvelope[]): void
+  /** Start a timer that emits `generate()` output every `intervalMs`. */
+  start(intervalMs: number): void
+  stop(): void
+  /** Manual tick (tests / custom drivers). */
+  tick(timeMs?: number): void
+  readonly tickCount: number
+}
+
+/**
+ * In-process source used by demos, simulations and tests. Business-agnostic:
+ * generators are supplied by apps / scenes.
+ */
+export function createScriptedSource(options: ScriptedSourceOptions): ScriptedSource {
+  let buffer: DataEnvelope[] = [...(options.initial ?? [])]
+  const subscriptions = new Set<{
+    query: DataQuery
+    cb: (e: DataEnvelope) => void
+  }>()
+  let timer: ReturnType<typeof setInterval> | undefined
+  let tickIndex = 0
+
+  function matches(e: DataEnvelope, q: DataQuery): boolean {
+    if (e.contract !== q.contract) return false
+    if (q.keys && !q.keys.includes(e.key)) return false
+    return true
+  }
+
+  const source: ScriptedSource = {
+    kind: options.kind,
+    async snapshot(query) {
+      return buffer.filter((e) => matches(e, query))
+    },
+    subscribe(query, cb) {
+      const sub = { query, cb }
+      subscriptions.add(sub)
+      return {
+        dispose: () => {
+          subscriptions.delete(sub)
+        }
+      }
+    },
+    emit(envelopes) {
+      buffer = envelopes.length > 0 ? [...buffer, ...envelopes].slice(-4096) : buffer
+      for (const { query, cb } of subscriptions) {
+        for (const e of envelopes) {
+          if (matches(e, query)) cb(e)
+        }
+      }
+    },
+    tick(timeMs) {
+      tickIndex++
+      if (!options.generate) return
+      const out = options.generate({ timeMs: timeMs ?? Date.now(), index: tickIndex })
+      source.emit(out)
+    },
+    start(intervalMs) {
+      source.stop()
+      timer = setInterval(() => source.tick(), intervalMs)
+      timer.unref?.()
+    },
+    stop() {
+      if (timer !== undefined) {
+        clearInterval(timer)
+        timer = undefined
+      }
+    },
+    get tickCount() {
+      return tickIndex
+    },
+    dispose() {
+      source.stop()
+      subscriptions.clear()
+      buffer = []
+    }
+  }
+  return source
+}
+
+export type { Disposable }

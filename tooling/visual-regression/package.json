@@ -1,0 +1,15 @@
+{
+  "name": "@twin/tooling-visual-regression",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node scripts/capture.mjs",
+    "compare": "node scripts/compare.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0"
+  }
+}

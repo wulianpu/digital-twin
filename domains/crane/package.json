@@ -1,0 +1,13 @@
+{
+  "name": "@twin/domain-crane",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/public.ts"
+  },
+  "dependencies": {
+    "@twin/world": "workspace:*",
+    "@twin/world-client": "workspace:*"
+  }
+}

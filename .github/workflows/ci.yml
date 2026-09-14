@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version comes from packageManager field
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # typecheck + test(含 scene-compliance/architecture) + exports + build + 2D-only
+      - name: Verify (Freeze gates)
+        run: pnpm verify
+
+      - name: Asset manifests
+        run: pnpm validate:assets
+
+  docker:
+    # I1: image build validation (no push; deployment wiring is environment-specific)
+    runs-on: ubuntu-latest
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build portal image
+        run: docker build --tag twin-portal:${{ github.sha }} .

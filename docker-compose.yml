@@ -1,0 +1,24 @@
+# Local production preview (I1-4): `docker compose up --build`
+# then open http://localhost:8080
+#
+# VITE_* values are BAKE-TIME (Vite inlines them at build); pass them as
+# build args or via .env — see docs/deployment.md.
+services:
+  portal:
+    build:
+      context: .
+      args:
+        VITE_GATEWAY_WS_URL: ${VITE_GATEWAY_WS_URL:-}
+        VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-}
+        VITE_RASTER_TILES_URL: ${VITE_RASTER_TILES_URL:-}
+        VITE_TILES_MAX_BYTES: ${VITE_TILES_MAX_BYTES:-}
+        VITE_DEFAULT_QUALITY: ${VITE_DEFAULT_QUALITY:-}
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+  # ---- Production placeholders (wire up in your environment) ----
+  # gateway:            # 平台数据网关（OT/IT 边界，§81）
+  #   image: your-registry/platform-gateway:latest
+  # tiles:              # 3D Tiles / 资产静态服务
+  #   image: your-registry/asset-server:latest

@@ -1,0 +1,30 @@
+{
+  "name": "@twin/standalone-shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./bootstrap": "./bootstrap.ts",
+    "./demoData": "./demoData.ts",
+    "./sites": "./sites.ts"
+  },
+  "dependencies": {
+    "@twin/domain-agv": "workspace:*",
+    "@twin/domain-crane": "workspace:*",
+    "@twin/domain-logistics": "workspace:*",
+    "@twin/domain-vessel": "workspace:*",
+    "@twin/map-engine": "workspace:*",
+    "@twin/scene-engine": "workspace:*",
+    "@twin/scene-host": "workspace:*",
+    "@twin/sdk": "workspace:*",
+    "@twin/spatial": "workspace:*",
+    "@twin/world": "workspace:*",
+    "@twin/world-client": "workspace:*",
+    "@twin/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "maplibre-gl": "6.9.0",
+    "three": "0.186.0"
+  }
+}

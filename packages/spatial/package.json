@@ -1,0 +1,10 @@
+{
+  "name": "@twin/spatial",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/public.ts"
+  },
+  "dependencies": {}
+}

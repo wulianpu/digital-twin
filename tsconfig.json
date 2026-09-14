@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node", "geojson"]
+  },
+  "include": [
+    "packages/**/src/**/*.ts",
+    "packages/**/src/**/*.vue",
+    "domains/**/src/**/*.ts",
+    "scenes/**/src/**/*.ts",
+    "scenes/**/src/**/*.vue",
+    "apps/**/src/**/*.ts",
+    "apps/**/src/**/*.vue",
+    "tooling/**/src/**/*.ts",
+    "tooling/**/*.test.ts",
+    "packages/**/*.test.ts",
+    "vitest.config.ts",
+    "vite.shared.ts"
+  ],
+  "exclude": ["**/node_modules", "**/dist"]
+}

@@ -1,0 +1,16 @@
+node_modules
+dist
+*.local
+.DS_Store
+coverage
+.vite
+*.tsbuildinfo
+
+# 视觉回归：current/ 与 diff 为每次运行产物（golden/ 基线入库）
+tooling/visual-regression/current
+
+# soak 中间报告（验收报告 soak-24h.json 保留在根目录）
+tooling/perf/reports
+
+# 环境与密钥
+.env

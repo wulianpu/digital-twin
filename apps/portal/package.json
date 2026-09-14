@@ -1,0 +1,42 @@
+{
+  "name": "@twin/portal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@twin/content": "workspace:*",
+    "@twin/domain-agv": "workspace:*",
+    "@twin/domain-crane": "workspace:*",
+    "@twin/domain-logistics": "workspace:*",
+    "@twin/domain-production": "workspace:*",
+    "@twin/domain-vessel": "workspace:*",
+    "@twin/map-engine": "workspace:*",
+    "@twin/scene-engine": "workspace:*",
+    "@twin/scene-global-ships": "workspace:*",
+    "@twin/scene-heavy-transport": "workspace:*",
+    "@twin/scene-host": "workspace:*",
+    "@twin/scene-production": "workspace:*",
+    "@twin/scene-stack-yard": "workspace:*",
+    "@twin/scene-vehicle-navigation": "workspace:*",
+    "@twin/sdk": "workspace:*",
+    "@twin/spatial": "workspace:*",
+    "@twin/tooling-perf": "workspace:*",
+    "@twin/ui": "workspace:*",
+    "@twin/world": "workspace:*",
+    "@twin/world-client": "workspace:*",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.42",
+    "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "maplibre-gl": "6.9.0",
+    "three": "0.186.0",
+    "@types/geojson": "^7946.0.16"
+  }
+}

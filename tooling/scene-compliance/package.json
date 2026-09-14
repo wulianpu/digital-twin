@@ -1,0 +1,22 @@
+{
+  "name": "@twin/tooling-scene-compliance",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@twin/sdk": "workspace:*",
+    "@twin/scene-host": "workspace:*",
+    "@twin/spatial": "workspace:*",
+    "@twin/world": "workspace:*",
+    "@types/three": "0.186.0",
+    "three": "0.186.0",
+    "@twin/scene-global-ships": "workspace:*",
+    "@twin/scene-heavy-transport": "workspace:*",
+    "@twin/scene-production": "workspace:*",
+    "@twin/scene-stack-yard": "workspace:*",
+    "@twin/scene-vehicle-navigation": "workspace:*"
+  }
+}

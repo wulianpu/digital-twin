@@ -1,0 +1,20 @@
+{
+  "name": "@twin/scene-vehicle-navigation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/entry.ts"
+  },
+  "dependencies": {
+    "@twin/domain-agv": "workspace:*",
+    "@twin/sdk": "workspace:*",
+    "@twin/spatial": "workspace:*",
+    "@twin/world": "workspace:*",
+    "vue": "^3.5.42"
+  },
+  "devDependencies": {
+    "maplibre-gl": "6.9.0",
+    "@types/geojson": "^7946.0.16"
+  }
+}

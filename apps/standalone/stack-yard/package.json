@@ -1,0 +1,31 @@
+{
+  "name": "@twin/standalone-stack-yard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@twin/domain-agv": "workspace:*",
+    "@twin/domain-crane": "workspace:*",
+    "@twin/domain-logistics": "workspace:*",
+    "@twin/domain-vessel": "workspace:*",
+    "@twin/map-engine": "workspace:*",
+    "@twin/scene-engine": "workspace:*",
+    "@twin/scene-host": "workspace:*",
+    "@twin/scene-stack-yard": "workspace:*",
+    "@twin/sdk": "workspace:*",
+    "@twin/spatial": "workspace:*",
+    "@twin/world": "workspace:*",
+    "@twin/world-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "maplibre-gl": "6.9.0",
+    "three": "0.186.0",
+    "@types/geojson": "^7946.0.16"
+  }
+}

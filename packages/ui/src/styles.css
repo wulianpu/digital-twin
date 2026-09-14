@@ -1,0 +1,65 @@
+/* Foundation UI base styles: scoped, scene-namespaced-friendly (§62). */
+:root {
+  --twin-bg: #0a1220;
+  --twin-panel: rgba(13, 24, 42, 0.92);
+  --twin-border: rgba(120, 160, 220, 0.25);
+  --twin-text: #d7e6ff;
+  --twin-accent: #4f9cf9;
+  --twin-warn: #f0a35e;
+  --twin-danger: #e05d5d;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--twin-bg);
+  color: var(--twin-text);
+  font-family:
+    system-ui,
+    -apple-system,
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+.twin-scene-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.twin-scene-layer > * {
+  pointer-events: auto;
+}
+
+.twin-panel-card {
+  background: var(--twin-panel);
+  border: 1px solid var(--twin-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  backdrop-filter: blur(6px);
+}
+
+.twin-btn {
+  border: 1px solid var(--twin-border);
+  background: rgba(79, 156, 249, 0.12);
+  color: var(--twin-text);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.twin-btn:hover {
+  background: rgba(79, 156, 249, 0.25);
+}
+
+.twin-btn[data-active='true'] {
+  background: var(--twin-accent);
+  color: #06121f;
+  font-weight: 600;
+}

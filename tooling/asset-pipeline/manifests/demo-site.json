@@ -1,0 +1,24 @@
+{
+  "assets": [
+    {
+      "ref": { "id": "gantry-crane-glb", "version": "r3" },
+      "kind": "glb",
+      "url": "https://assets.example/shipyard/gantry-crane/r3/gantry-crane.glb",
+      "bytes": 48211234,
+      "metadata": { "lod": "high", "collision": "gantry-crane-collision" }
+    },
+    {
+      "ref": { "id": "gantry-crane-collision", "version": "r3" },
+      "kind": "collision-proxy",
+      "url": "https://assets.example/shipyard/gantry-crane/r3/collision.glb",
+      "bytes": 812000
+    },
+    {
+      "ref": { "id": "changxing-site-tileset", "version": "2026-08" },
+      "kind": "tileset",
+      "url": "https://tiles.example/changxing/2026-08/tileset.json",
+      "bytes": 189952116,
+      "metadata": { "region": "site-changxing" }
+    }
+  ]
+}

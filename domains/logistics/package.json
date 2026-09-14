@@ -1,0 +1,14 @@
+{
+  "name": "@twin/domain-logistics",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/public.ts"
+  },
+  "dependencies": {
+    "@twin/world": "workspace:*",
+    "@twin/spatial": "workspace:*",
+    "@twin/world-client": "workspace:*"
+  }
+}

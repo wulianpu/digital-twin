@@ -1,0 +1,24 @@
+{
+  "name": "@twin/scene-production",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/entry.ts"
+  },
+  "dependencies": {
+    "@twin/domain-agv": "workspace:*",
+    "@twin/domain-crane": "workspace:*",
+    "@twin/domain-production": "workspace:*",
+    "@twin/sdk": "workspace:*",
+    "@twin/spatial": "workspace:*",
+    "@twin/world": "workspace:*",
+    "vue": "^3.5.42"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "maplibre-gl": "6.9.0",
+    "three": "0.186.0",
+    "@types/geojson": "^7946.0.16"
+  }
+}

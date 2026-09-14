@@ -1,0 +1,21 @@
+{
+  "name": "@twin/scene-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/public.ts"
+  },
+  "dependencies": {
+    "@twin/content": "workspace:*",
+    "@twin/sdk": "workspace:*",
+    "@twin/spatial": "workspace:*",
+    "@twin/world": "workspace:*",
+    "@twin/world-client": "workspace:*",
+    "3d-tiles-renderer": "0.5.2",
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0"
+  }
+}

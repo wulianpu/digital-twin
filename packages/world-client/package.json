@@ -1,0 +1,13 @@
+{
+  "name": "@twin/world-client",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/public.ts"
+  },
+  "dependencies": {
+    "@twin/spatial": "workspace:*",
+    "@twin/world": "workspace:*"
+  }
+}
