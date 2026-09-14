@@ -14,7 +14,12 @@ import pixelmatch from 'pixelmatch'
 const toolDir = fileURLToPath(new URL('..', import.meta.url))
 const goldenDir = join(toolDir, 'golden')
 const currentDir = join(toolDir, 'current')
-const DIFF_THRESHOLD_PERCENT = 0.5
+// 按帧阈值：2D 帧 0.5%；3D 帧含水体动画与实时数据定位差异，容忍 3%
+const THRESHOLDS = {
+  'production-3d.png': 3.0,
+  'heavy-transport-3d.png': 3.0
+}
+const DEFAULT_THRESHOLD_PERCENT = 0.5
 
 if (!existsSync(currentDir)) {
   console.error('✗ current/ 不存在：先运行 node scripts/capture.mjs current')
@@ -43,14 +48,15 @@ for (const file of readdirSync(goldenDir)) {
   })
   const total = golden.width * golden.height
   const percent = (diffPixels / total) * 100
-  if (percent > DIFF_THRESHOLD_PERCENT) {
-    console.error(`✗ ${file}: 差异 ${percent.toFixed(2)}% > ${DIFF_THRESHOLD_PERCENT}%`)
+  const threshold = file in THRESHOLDS ? THRESHOLDS[file] : DEFAULT_THRESHOLD_PERCENT
+  if (percent > threshold) {
+    console.error(`✗ ${file}: 差异 ${percent.toFixed(2)}% > ${threshold}%`)
     const diffPath = join(currentDir, 'diff', file)
     mkdirSync(dirname(diffPath), { recursive: true })
     writeFileSync(diffPath, PNG.sync.write(diff))
     failed = true
   } else {
-    console.log(`✓ ${file}: 差异 ${percent.toFixed(2)}%`)
+    console.log(`✓ ${file}: 差异 ${percent.toFixed(2)}%（阈 ${threshold}%）`)
   }
 }
 

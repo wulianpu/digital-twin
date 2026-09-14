@@ -99,3 +99,13 @@ test('HISTORY 时间线 scrubber 可见（I9-6/I10）', async ({ page }) => {
   await page.getByRole('banner').getByRole('button', { name: 'HISTORY' }).click()
   await expect(page.locator('.portal-scrub')).toBeVisible({ timeout: 10_000 })
 })
+
+test('站点切换：范围变化触发场景重跑（I10-1）', async ({ page }) => {
+  await signIn(page)
+  await page.locator('[data-scene-id="stack-yard"]').click()
+  await expect(page.locator('.yard-panel')).toBeVisible({ timeout: 20_000 })
+  // 切换站点 → App 强制重跑场景（面板重建、数据跟随新站点）
+  await page.getByRole('banner').getByRole('button', { name: '启东' }).click()
+  await expect(page.locator('.yard-panel')).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('.portal-sidebar')).toBeVisible()
+})
