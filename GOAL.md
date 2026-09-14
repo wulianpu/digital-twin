@@ -266,5 +266,7 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③scoped graphics onFrame/onPick 同样立即 track；④scoped data/map/graphics
   不再暴露 dispose 给 Scene（生命周期归 Composition Root，§81）；
   ⑤hostile compliance 用例改用严格资源计数断言。
-  验证：`pnpm verify` 全绿、150/150 测试、compliance 16/16、e2e 9/9。
+  验证：`pnpm verify` 全绿、150/150 测试
+
+- 2026-09-15 **Issue #3 已关闭**（P0 回归修复确认生效——coordinator 回滚测试 4/4、MountScope 测试 4/4、hostile compliance 16/16 均通过）。无需额外代码变更，修复已在 I10/I11 轮中完成并推送（4000b5e）。、compliance 16/16、e2e 9/9。
   已推送 origin main（4000b5e）。Issue #3 关闭。
