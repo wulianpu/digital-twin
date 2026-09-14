@@ -259,3 +259,12 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   compare.mjs 恢复统一 0.5% 阈值（确定性渲染下无需放宽 3D 阈值）；
   `.env.example` 新增 `VITE_VISUAL_FIXTURE`。
   验证：`pnpm verify` 全绿、150/150 测试。Issue #2 已关闭。：`pnpm verify` 全绿、139/139 测试、`pnpm test:e2e` 9/9。
+
+- 2026-09-15 **Issue #3 修复（P0 回归：MountScope 旁路 + Coordinator 回滚失效）**：
+  ①previous snapshot 移至 setState(loading) 之前（此前永远取不到 active 态）；
+  ②scoped data.subscribe 创建成功时立即 scope.track（Host 兜底 dispose）；
+  ③scoped graphics onFrame/onPick 同样立即 track；④scoped data/map/graphics
+  不再暴露 dispose 给 Scene（生命周期归 Composition Root，§81）；
+  ⑤hostile compliance 用例改用严格资源计数断言。
+  验证：`pnpm verify` 全绿、150/150 测试、compliance 16/16、e2e 9/9。
+  已推送 origin main（4000b5e）。Issue #3 关闭。
