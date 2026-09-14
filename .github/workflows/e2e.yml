@@ -7,12 +7,12 @@ on:
 
 jobs:
   e2e:
-    # I6-1: 浏览器端冒烟（登录/场景切换/2D↔3D/世界模式/权限强制）
+    # I6-1: 浏览器端冒烟（登录/场景切换/2D↔3D/世界模式/权限强制/搜索）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4 # version comes from packageManager field
 
       - uses: actions/setup-node@v4
         with:

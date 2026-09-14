@@ -21,6 +21,6 @@ export default defineConfig({
     command: 'pnpm --filter @twin/portal dev -- --port 5173 --strictPort --host 127.0.0.1',
     url: 'http://127.0.0.1:5173',
     reuseExistingServer: true,
-    timeout: 60_000
+    timeout: 180_000 // CI 冷启动 + 首次依赖优化可能较慢
   }
 })
