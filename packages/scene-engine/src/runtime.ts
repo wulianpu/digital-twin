@@ -140,7 +140,7 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
 
   frameLoop.onFrame((info: FrameInfo) => {
     adaptive.sample(frameLoop.p95Ms)
-    environment.setFrame(info.elapsedSeconds)
+    environment.setFrame(options.visualFixture ? 0 : info.elapsedSeconds)
 
     // Frame-boundary fast-path consumption (§36) — never message-driven.
     if (options.stateBuffer) {

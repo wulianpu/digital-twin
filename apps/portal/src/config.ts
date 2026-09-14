@@ -20,6 +20,8 @@ export interface PortalConfig {
   readonly tilesTilesetUrl: string | undefined
   /** I4-2：KTX2/DRACO 解码器基础路径（离线部署指向本地静态目录）。 */
   readonly assetDecoderPath: string
+  /** 视觉回归 fixture 模式（I9-6）：确定性渲染（冻结水体/固定数据）。 */
+  readonly visualFixture: boolean
 }
 
 const QUALITIES: readonly QualityProfile[] = ['OFFICE', 'STANDARD', 'HIGH', 'EXHIBITION']
@@ -47,6 +49,7 @@ export function loadPortalConfig(
       ? (quality as QualityProfile)
       : 'STANDARD',
     tilesTilesetUrl: str(env, 'VITE_TILES_TILESET_URL'),
-    assetDecoderPath: str(env, 'VITE_ASSET_DECODER_PATH') ?? DEFAULT_DECODER_PATH
+    assetDecoderPath: str(env, 'VITE_ASSET_DECODER_PATH') ?? DEFAULT_DECODER_PATH,
+    visualFixture: str(env, 'VITE_VISUAL_FIXTURE') === '1'
   }
 }

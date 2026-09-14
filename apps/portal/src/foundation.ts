@@ -228,6 +228,7 @@ export function buildFoundation(
       sseMultiplier: 12,
       ...(config.tilesTilesetUrl ? { tilesetUrls: [config.tilesTilesetUrl] } : {})
     },
+    visualFixture: config.visualFixture,
     water: { enabled: true, halfSizeMeters: 4000 },
     getActiveFrame: () => {
       const scope = world.session.scope

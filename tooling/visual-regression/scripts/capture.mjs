@@ -19,25 +19,20 @@ const GOLDEN = [
   {
     name: 'stack-yard-2d',
     hash: '#/scene/stack-yard',
-    settleMs: 6000
+    vfx3d: false,
+    settleMs: 3000
   },
   {
     name: 'production-3d',
     hash: '#/scene/production',
-    settleMs: 10_000,
-    beforeShot: async (page) => {
-      await page.locator('[data-view-toggle="graphics"]').click()
-      await page.waitForTimeout(5000)
-    }
+    vfx3d: true,
+    settleMs: 3000
   },
   {
     name: 'heavy-transport-3d',
     hash: '#/scene/heavy-transport',
-    settleMs: 8000,
-    beforeShot: async (page) => {
-      await page.locator('[data-view-toggle="graphics"]').click()
-      await page.waitForTimeout(5000)
-    }
+    vfx3d: true,
+    settleMs: 3000
   }
 ]
 
@@ -58,10 +53,19 @@ if (await login.isVisible().catch(() => false)) {
 }
 
 for (const golden of GOLDEN) {
-  await page.goto(`${baseUrl}/${golden.hash}`)
+  // I9-6: fixture 模式 URL——确定性时钟 + 确定性回放数据
+  await page.goto(`${baseUrl}/?vfx=1${golden.hash}`)
   await page.waitForLoadState('domcontentloaded')
   await page.waitForTimeout(golden.settleMs)
+  // 等 3D 引擎 boot（如需要）
+  const toggle3d = page.locator('[data-view-toggle="graphics"]')
+  if (golden.vfx3d && (await toggle3d.count()) > 0 && (await toggle3d.isVisible().catch(() => false))) {
+    await toggle3d.click()
+    await page.waitForTimeout(5000)
+  }
   await golden.beforeShot?.(page)
+  // I9-6: 等 vfx readiness（水体冻结 + 数据稳定）
+  await page.waitForFunction(() => window.__vfxReady === true, { timeout: 15_000 })
   const target = join(outDir, `${golden.name}.png`)
   await page.screenshot({ path: target })
   console.log(`✓ ${target}`)

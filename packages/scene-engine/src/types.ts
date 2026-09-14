@@ -70,6 +70,8 @@ export interface SceneEngineOptions {
   backgroundColor?: number
   /** Injected lease counter for diagnostics (asset manager lives in the app). */
   getAssetLeaseCount?(): number
+  /** 视觉回归 fixture 模式（I9-6）：冻结水体动画时间，确定性渲染。 */
+  visualFixture?: boolean
 }
 
 export interface SceneViewHandle {

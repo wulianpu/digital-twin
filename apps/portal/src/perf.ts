@@ -19,6 +19,8 @@ declare global {
     /** A2: node 侧逐轮驱动（单轮场景切换 + heap 采样） */
     __twinSoakStep?: () => Promise<number | undefined>
     __twinSoakReset?: () => void
+    __vfxReady?: boolean
+    __vfxFrozen?: boolean
   }
 }
 
@@ -162,6 +164,34 @@ export function setupPerfAutomation(
     void (async () => {
       await delay(6000) // 等进入 3D 且渲染稳定
       await contextLossDrill(foundation)
+    })()
+  }
+
+  // ── 确定性 Golden Fixture 模式（I9-6 / Issue #2）──────────────────
+  // ?vfx=1&scene=production&view=3d
+  // 冻结世界时钟 + 数据 + 水体动画 + 固定相机 → 确定性截图。
+  if (params.has('vfx')) {
+    void (async () => {
+      // 等 portal 挂载 + 场景面板可见
+      await delay(5000)
+
+      // 固定世界时钟（HISTORY 模式，确定性回放数据）
+      foundation.world.setMode('history')
+      foundation.data.setMode('history')
+      foundation.world.clock.seek(1_790_000_000_000)
+      foundation.world.clock.setSpeed(1)
+
+      // 等待回放数据到达 + 渲染稳定
+      await delay(4000)
+
+      // 冻结渲染：设定确定性的帧时间（水体动画冻结）
+      window.__vfxFrozen = true
+
+      // 等待渲染管线跟上
+      await delay(500)
+
+      window.__vfxReady = true
+      console.info('[vfx] Golden capture ready')
     })()
   }
 }
