@@ -245,3 +245,10 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   .gitignore 覆盖构建产物/视觉回归 current/soak 中间报告；遵守边界不推送远端）。
   24h 长跑继续（21:15 检查点：进程活跃、容器 healthy、healthz ok）。
   验证：`pnpm verify` 全绿 133/133。
+- 2026-09-15 **I11 视觉基线与验证完善（第四轮评估驱动，全部 4 项）**：
+  Golden 三帧按 I8–I10 最新代码重捕获（dev 5199 + SwiftShader 渲染），
+  compare.mjs 支持按帧阈值（2D 0.5% / 3D 3%——水体动画与实时数据定位
+  属合理帧间差异），二次采集对比 0.00%/0.21%/0.13% 全在阈；
+  e2e 补站点切换 force 重选冒烟（I10-1 端到端覆盖）。
+  Run #6 24h 长跑继续健康运行（container healthy、healthz ok）。
+  验证：`pnpm verify` 全绿、139/139 测试、`pnpm test:e2e` 9/9。
