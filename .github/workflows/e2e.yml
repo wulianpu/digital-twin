@@ -25,5 +25,8 @@ jobs:
       - name: Install Chromium
         run: pnpm --filter @twin/tooling-e2e exec playwright install --with-deps chromium
 
+      - name: Build portal
+        run: pnpm --filter @twin/portal build
+
       - name: Run E2E smoke
         run: pnpm --filter @twin/tooling-e2e test
