@@ -251,4 +251,11 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   属合理帧间差异），二次采集对比 0.00%/0.21%/0.13% 全在阈；
   e2e 补站点切换 force 重选冒烟（I10-1 端到端覆盖）。
   Run #6 24h 长跑继续健康运行（container healthy、healthz ok）。
-  验证：`pnpm verify` 全绿、139/139 测试、`pnpm test:e2e` 9/9。
+  验证
+
+- 2026-09-14 **Issue #2 视觉回归确定性 Golden Fixture（P1，已关闭）**：
+  perf.ts 新增 `?vfx=1` 确定性 fixture 模式（HISTORY 固定回放点 + 水体动画冻结
+  + readiness 信号 `__vfxReady`）；capture.mjs 改用 fixture URL + readiness 等待；
+  compare.mjs 恢复统一 0.5% 阈值（确定性渲染下无需放宽 3D 阈值）；
+  `.env.example` 新增 `VITE_VISUAL_FIXTURE`。
+  验证：`pnpm verify` 全绿、150/150 测试。Issue #2 已关闭。：`pnpm verify` 全绿、139/139 测试、`pnpm test:e2e` 9/9。
