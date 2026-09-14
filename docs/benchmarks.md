@@ -69,16 +69,17 @@ headless Chromium → 登录 → 300 轮 global-ships ⇄ stack-yard 切换 → 
 
 > 结论：**通过 §71 验收标准**。
 
-### Run #5 — 24h 墙钟长跑（DoD #5 正式验收，进行中）
+### Run #5 — 1152 轮密集浸泡（⚠️ 非 24h 墙钟，见更正）
 
-- 启动：2026-09-14 20:52:03（对**生产镜像** http://localhost:8080 执行）
-- 参数：`--cycles 1152 --cycleIntervalSec 73`（1152 轮 × ≈74.5s ≈ 23.9h；
-  轮间隔覆盖长周期定时器与资源行为——此前"1152 轮 ≈ 24h"的换算未计
-  轮间隔，实际 ≈29 分钟，已更正）
-- 报告：完成后自动写入 `soak-24h.json`；通过标准
-  `completedCycles === 1152 && errors === 0 && plateau.detected === true`
-- ⚠️ 修正记录：早前文档"1152 轮 ≈ 24h"漏计轮间隔；间隔参数已补齐并实测
-  （2 轮 × 3s 间隔 → duration 3097ms ≥ 3000ms）
+- 执行：2026-09-14 20:52 → 21:35（对**生产镜像** http://localhost:8080）
+- 结果：**1152/1152 完成、0 错误、plateau 斜率 0.02 ≤ 0.05 → pass**
+- 报告：`docs/soak-1152cycles-fast.json`
+- ⚠️ **更正（2026-09-14 晚）**：`--cycleIntervalSec 73` 参数存在但**未接线到
+  页面内驱动器**（perf.ts 的 soak 通道只读 soakCycles），导致 1152 轮以
+  ≈1.5s/轮在 29.3 分钟内跑完——**这不是 24h 墙钟验证**，早前"24h 长跑
+  已启动"的结论据此更正。本运行作为 1152 轮密集浸泡证据保留。
+- 正式 24h 验收需两项修复后重跑：①perf.ts soak 通道接入轮间隔参数；
+  ②soak-run.mjs 改为 node 侧逐轮驱动 + 页面故障自动恢复（24h 必需健壮性）
 
 ### 微基线（Node，M 系列；`pnpm bench`）
 
@@ -122,5 +123,5 @@ CI 侧 `pnpm bench` 提供空间数学与 StateBuffer 的微基线；
 |---|---|
 | **一键部署**（DoD #1） | ✅ `docker compose up --build` 实跑：镜像构建成功、容器 healthy、/healthz ok、首页与 GLB 验证通过（2026-09-14，见上方附注） |
 | 2560×1440 ≥30 FPS，p95 ≤ 33ms | ✅ 开发机 116.7 FPS / 10.3ms（参考硬件跑分待执行） |
-| 24h 内存 plateau | 🟠 **24h 长跑进行中**（2026-09-14 20:52 启动，`--cycles 1152 --cycleIntervalSec 73`，对生产镜像 8080 执行；预计 09-15 20:47 出报告 soak-24h.json，判定自动） |
+| 24h 内存 plateau | 🟠 1152 轮密集浸泡通过（Run #5，斜率 0.02）；**24h 墙钟验收待修复轮间隔接线与执行器健壮性后在验收机执行** |
 | Context loss 自动恢复 | ✅ Run #2 |
