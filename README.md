@@ -53,7 +53,7 @@ pnpm dev:vehicles          # 行车导航（2D-only，不加载 three）
 pnpm verify                # 全链：lint + typecheck + test + exports + build + 2D-only
 pnpm lint                  # ESLint 静态检查（纳入 verify 门禁）
 pnpm typecheck             # 全仓严格类型（vue-tsc）
-pnpm test                  # 133 项单元/合规测试
+pnpm test                  # 137 项单元/合规测试
 pnpm test:e2e              # Playwright 浏览器冒烟（登录/切场景/2D↔3D/世界模式/权限）
 pnpm test:architecture     # 16 项架构约束（依赖方向 / 单入口 / 懒加载边界）
 pnpm test:compliance       # Scene 合规：mount/unmount 循环 + plateau + 2D/3D×100

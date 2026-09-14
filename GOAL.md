@@ -89,6 +89,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
 - [x] I9-6（B3）顶栏 HISTORY 时间线 scrubber：拖动环范围 → clock.seek 即时回放推进
 - [x] I9-7 验证：`pnpm verify` 全绿 137/137 测试、`pnpm test:e2e` 5/5、interval 参数实测（2 轮 × 3s 间隔 duration 3097ms）
 
+### I10 功能评估第三轮发现（待办）
+
+- [ ] I10-1（A）场景响应会话范围变化：production/stack-yard/vehicle-navigation 订阅 `onSessionChanged`，`scope.siteId` 变化时重建 frame/布局/数据并适配视图（当前挂载后切站点无效果）
+- [ ] I10-2（A）WorldClient 时钟注入：构造项 `nowFn`（foundation 传 `world.time.now`），staleness/清扫按世界时钟判定——HISTORY 模式回放数据不误判陈旧
+- [ ] I10-3（A）Portal 启用陈旧检测：`defaultStaleAfterMs`（live 10s）+ sweep 启用（当前 sweep=0、无 staleAfterMs，顶栏陈旧计数恒 0 是死功能；依赖 I10-2 避免历史模式误报）
+- [ ] I10-4（B）e2e 补 I8 新功能：实体搜索定位、告警确认、快照导出
+- [ ] I10-5（B）vehicle-navigation AGV 轨迹尾线（production 已有，行导更核心）
+- [ ] I10-6（C）README/GOAL 测试计数随迭代校准（当前 README 写 133，实际 137）
+
 ### 持续小项（随迭代顺带处理）
 
 - [x] S1 场景内视图切换与壳层视图开关联动（消除双开关缝隙）
@@ -212,6 +221,17 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   验证：`pnpm verify` 全绿、137/137 测试（+2）、`pnpm test:e2e` 5/5、
   interval 参数实测（2 轮 × 3s 间隔 duration 3097ms）、对生产镜像 8080
   实跑 5 轮步进通过。
+- 2026-09-15 **更正 + 24h 长跑重启 + 第三轮评估入账**：
+  ⚠️ 更正 I9 日志——昨晚 20:52 启动的运行发生在轮间隔接线修复**之前**，
+  实为 1152 轮密集浸泡（29.3 分钟跑完，非 24h 墙钟），报告已更名
+  docs/soak-1152cycles-fast.json；"24h 长跑已启动"的表述撤回。
+  **Run #6 已于 09-15 00:39 以 I9 健壮执行器重启**（node 侧逐轮驱动 +
+  轮间隔 73s，预计 09-16 00:35 前后完成，报告 soak-24h.json 自动落盘）。
+  第三轮功能评估新发现两项 A 类（场景不响应站点切换；Portal 陈旧检测
+  实际失效——sweep 禁用且无 staleAfterMs，需 WorldClient 时钟注入以避免
+  HISTORY 误报）与两项 B 类（e2e 覆盖 I8 新功能、行导 AGV 轨迹），
+  已入账为 I10 待办；README 测试计数漂移一并校准。
+  验证：`pnpm verify` 全绿 137/137（本轮仅文档与待办变更）。
 - 2026-09-14 **工程化收尾**：docs/benchmarks.md §3 验收对照表补 DoD #1 ✅ 行；
   初始化本地 git 仓库并完成首次提交（基线 + I1-I7 全部成果入库；
   .gitignore 覆盖构建产物/视觉回归 current/soak 中间报告；遵守边界不推送远端）。
