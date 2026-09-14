@@ -28,6 +28,7 @@ export async function mountMap(
   const buildingSource = sceneScopedId(SCENE_ID, 'buildings')
   const lineSource = sceneScopedId(SCENE_ID, 'lines')
   const agvSource = sceneScopedId(SCENE_ID, 'agvs')
+  const trailSource = sceneScopedId(SCENE_ID, 'trails')
   const craneSource = sceneScopedId(SCENE_ID, 'cranes')
   const buildingFill = sceneScopedId(SCENE_ID, 'building-fill')
   const buildingLine = sceneScopedId(SCENE_ID, 'building-line')
@@ -64,6 +65,10 @@ export async function mountMap(
     type: 'geojson',
     data: { type: 'FeatureCollection', features: [] },
     promoteId: 'key'
+  })
+  map.addSource(trailSource, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] }
   })
 
   map.addLayer({
@@ -116,6 +121,13 @@ export async function mountMap(
     paint: { 'text-color': '#cfe3ff', 'text-halo-color': '#0a1220', 'text-halo-width': 1.2 }
   })
   map.addLayer({
+    id: sceneScopedId(SCENE_ID, 'agv-trail'),
+    type: 'line',
+    source: trailSource,
+    layout: { 'line-cap': 'round' },
+    paint: { 'line-color': '#4f9cf9', 'line-width': 2, 'line-opacity': 0.55 }
+  })
+  map.addLayer({
     id: agvDot,
     type: 'circle',
     source: agvSource,
@@ -148,6 +160,7 @@ export async function mountMap(
   map.on('click', onClick)
 
   let selectedKey: string | undefined
+  const trails = new Map<string, Array<[number, number]>>()
 
   function toLngLat(x: number, z: number): [number, number] {
     const g = frameLocalToGeodetic(layout.frame, { x, y: 0, z })
@@ -170,6 +183,30 @@ export async function mountMap(
         type: 'FeatureCollection',
         features
       })
+      // B3: AGV 轨迹尾线（每台保留最近 30 点）
+      const trailFeatures: GeoJSON.Feature[] = []
+      for (const [key, s] of states) {
+        const g = toLngLat(s.xMeters, s.yMeters)
+        const trail = trails.get(key) ?? []
+        const last = trail[trail.length - 1]
+        if (!last || Math.abs(last[0] - g[0]) > 1e-6 || Math.abs(last[1] - g[1]) > 1e-6) {
+          trail.push(g)
+          if (trail.length > 30) trail.shift()
+          trails.set(key, trail)
+        }
+        if (trail.length >= 2) {
+          trailFeatures.push({
+            type: 'Feature',
+            properties: { key },
+            geometry: { type: 'LineString', coordinates: [...trail] }
+          })
+        }
+      }
+      ;(map.getSource(trailSource) as GeoJSONSource | undefined)?.setData({
+        type: 'FeatureCollection',
+        trailFeaturesLength: trailFeatures.length,
+        features: trailFeatures
+      } as GeoJSON.FeatureCollection)
     },
     updateCranes(states) {
       const features: GeoJSON.Feature[] = layout.cranes.map((base) => {
@@ -213,6 +250,7 @@ export async function mountMap(
     dispose() {
       map.off('click', onClick)
       for (const id of [
+        sceneScopedId(SCENE_ID, 'agv-trail'),
         agvDot,
         craneLabel,
         craneDot,
@@ -223,7 +261,7 @@ export async function mountMap(
       ]) {
         if (map.getLayer(id)) map.removeLayer(id)
       }
-      for (const id of [craneSource, agvSource, lineSource, buildingSource]) {
+      for (const id of [craneSource, agvSource, lineSource, buildingSource, trailSource]) {
         if (map.getSource(id)) map.removeSource(id)
       }
     }

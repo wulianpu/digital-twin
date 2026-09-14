@@ -182,6 +182,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   写入 soak-24h.json，判定自动；benchmarks.md 已回填 Run #5 启动记录与
   DoD 对照，operations.md 命令同步。验证：compose exit 0、healthz ok、
   容器 healthy、首页 200。
+- 2026-09-14 **I8 功能完善（评估驱动，全部 8 项）+ 2 个真实缺陷修复**：
+  ①**A1 缺陷**：HISTORY 回放不随时间推进（seek 仅在切换时调用一次）——
+  foundation tick 驱动 seek + 模式自动同步；②**历史环预置顺序错误**：
+  buildHistorySource 构建于空环之上（HISTORY 实际无回放数据）——预置提前；
+  ③**WorldClient 全局去重吞掉多订阅者信封**——改为按订阅独立去重。
+  功能落地：告警确认交互、全局实体搜索（WorldClient.search + 顶栏 UI + focus 定位）、
+  AGV 轨迹尾线（production 2D 最近 30 点）、业务状态快照导出（JSON 下载）、
+  ViewApi 主驱动联动（setPrimary 随场景视图切换）。
+  验证：`pnpm verify` 全绿、135/135 测试（+2：A1 回放推进 + live 源隔离）。
 - 2026-09-14 **工程化收尾**：docs/benchmarks.md §3 验收对照表补 DoD #1 ✅ 行；
   初始化本地 git 仓库并完成首次提交（基线 + I1-I7 全部成果入库；
   .gitignore 覆盖构建产物/视觉回归 current/soak 中间报告；遵守边界不推送远端）。

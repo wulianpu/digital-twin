@@ -40,6 +40,12 @@ interface ActiveSubscription {
   handlers: Set<EnvelopeHandler>
   staleAfterMs: number
   sourceDisposables: Map<WorldMode, Disposable>
+  /**
+   * 按订阅记录的已投递 revision（key → revision）。去重是**每订阅**语义：
+   * 同一契约的多个订阅者必须各自收到全部新信封，全局缓存去重会吞掉
+   * 第二个订阅者的投递（I7 修复的多订阅缺陷）。
+   */
+  delivered: Map<string, number>
 }
 
 /**
@@ -101,7 +107,8 @@ export class WorldClient implements DataApi {
       query,
       handlers: new Set([cb]),
       staleAfterMs: options?.staleAfterMs ?? this.options.defaultStaleAfterMs ?? Number.POSITIVE_INFINITY,
-      sourceDisposables: new Map()
+      sourceDisposables: new Map(),
+      delivered: new Map()
     }
     this.active.add(sub)
     this.attachToSource(sub)
@@ -124,6 +131,25 @@ export class WorldClient implements DataApi {
 
   peek(contract: DataContractIdString, key: string): DataEnvelope | undefined {
     return this.cache.get(contract)?.get(key)
+  }
+
+  /**
+   * 全局实体搜索（B2）：在缓存键中做大小写不敏感子串匹配。
+   * 只搜键（Foundation 不理解 payload 语义，§33）。
+   */
+  search(term: string, limit = 8): Array<{ contract: DataContractIdString; key: string }> {
+    const q = term.trim().toLowerCase()
+    if (!q) return []
+    const out: Array<{ contract: DataContractIdString; key: string }> = []
+    for (const [contract, byKey] of this.cache) {
+      for (const key of byKey.keys()) {
+        if (key.toLowerCase().includes(q)) {
+          out.push({ contract, key })
+          if (out.length >= limit) return out
+        }
+      }
+    }
+    return out
   }
 
   /** 缓存中质量为 stale 的信封数量（I3-3：降级可见）。 */
@@ -181,30 +207,29 @@ export class WorldClient implements DataApi {
     }
   }
 
-  /** Cache write + staleness evaluation. Returns the envelope to deliver. */
+  /**
+   * Cache write + per-subscription dedup + staleness evaluation.
+   * Returns the envelope to deliver to THIS subscription, or undefined when
+   * it is a duplicate the subscriber has already seen.
+   */
   private ingest(e: DataEnvelope, sub: ActiveSubscription): DataEnvelope | undefined {
     if (!this.matches(e, sub.query)) return undefined
-    const cached = this.cache.get(e.contract)?.get(e.key)
+    const last = sub.delivered.get(e.key)
     if (
-      cached &&
-      cached.revision !== undefined &&
+      last !== undefined &&
       e.revision !== undefined &&
-      e.revision <= cached.revision
+      e.revision <= last
     ) {
       return undefined
     }
+    if (e.revision !== undefined) sub.delivered.set(e.key, e.revision)
     const effective =
       sub.staleAfterMs !== Number.POSITIVE_INFINITY &&
       e.sourceTime + sub.staleAfterMs < Date.now() &&
       e.quality === 'good'
         ? { ...e, quality: 'stale' as const }
         : e
-    let byKey = this.cache.get(e.contract)
-    if (!byKey) {
-      byKey = new Map()
-      this.cache.set(e.contract, byKey)
-    }
-    byKey.set(e.key, effective)
+    this.putCache(effective)
     return effective
   }
 

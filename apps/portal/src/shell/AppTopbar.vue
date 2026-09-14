@@ -29,6 +29,23 @@ const CONN_LABEL: Record<ConnectionState['state'], string> = {
   connecting: '连接中…',
   closed: '已断开 · 重连中'
 }
+// B2: 全局实体搜索（缓存键）→ 选中 + 定位
+const searchTerm = ref('')
+const results = ref<Array<{ contract: string; key: string }>>([])
+
+function onSearchInput(): void {
+  results.value = foundation.searchEntities(searchTerm.value, 8)
+}
+
+function pickResult(item: { contract: string; key: string }): void {
+  const [namespace, id] = item.key.split('/')
+  const entity = { namespace, id }
+  foundation.selection.setPrimary(entity)
+  void foundation.view.focus(entity)
+  searchTerm.value = ''
+  results.value = []
+}
+
 const CONN_HINT: Record<ConnectionState['state'], string> = {
   local: '使用内置演示网关（未配置 VITE_GATEWAY_WS_URL）',
   open: '平台网关连接正常',
@@ -87,6 +104,25 @@ const QUALITIES: QualityProfile[] = ['OFFICE', 'STANDARD', 'HIGH', 'EXHIBITION']
     >
       <span class="portal-conn-dot" />
       {{ CONN_LABEL[conn.state] }}<template v-if="conn.staleCount > 0"> · {{ conn.staleCount }} 项陈旧</template><template v-if="mapIssues.length > 0"> · 底图异常</template>
+    </div>
+
+    <div class="portal-search" data-entity-search>
+      <input
+        v-model="searchTerm"
+        class="portal-search-input"
+        placeholder="搜索实体（AGV / 船舶 / 堆位…）"
+        @input="onSearchInput"
+      />
+      <ul v-if="results.length > 0" class="portal-search-results">
+        <li
+          v-for="r in results"
+          :key="r.contract + r.key"
+          class="portal-search-item"
+          @click="pickResult(r)"
+        >
+          {{ r.key }}
+        </li>
+      </ul>
     </div>
 
     <div class="portal-group">
@@ -179,6 +215,53 @@ const QUALITIES: QualityProfile[] = ['OFFICE', 'STANDARD', 'HIGH', 'EXHIBITION']
   border-bottom: 1px solid var(--twin-border);
   background: rgba(11, 18, 32, 0.96);
   flex-wrap: wrap;
+}
+
+.portal-search {
+  position: relative;
+}
+
+.portal-search-input {
+  width: 220px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--twin-text);
+  background: rgba(10, 18, 32, 0.9);
+  border: 1px solid var(--twin-border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.portal-search-input:focus {
+  border-color: var(--twin-accent);
+}
+
+.portal-search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--twin-panel);
+  border: 1px solid var(--twin-border);
+  border-radius: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.portal-search-item {
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  color: #cfe3ff;
+  cursor: pointer;
+}
+
+.portal-search-item:hover {
+  background: rgba(79, 156, 249, 0.18);
 }
 
 .portal-conn {

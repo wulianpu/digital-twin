@@ -80,7 +80,7 @@ const entry: SceneEntry = {
         progressPct: Math.round(t.progressPct)
       }))
       state.alarms = [...alarms.values()]
-        .filter((a) => !a.acknowledged)
+        .filter((a) => !a.acknowledged && !ackedAlarms.has(a.alarmId))
         .slice(0, 5)
         .map((a) => ({ alarmId: a.alarmId, severity: a.severity, message: a.message }))
     }
@@ -113,7 +113,9 @@ const entry: SceneEntry = {
 
     const panel = mountProductionPanel(uiLayer.element, {
       state,
-      onSetView: (view) => void setView(view)
+      onSetView: (view) => void setView(view),
+      onAckAlarm: acknowledgeAlarm,
+      onExport: exportSnapshot
     })
 
     const { mountMap } = await import('./map')
@@ -168,12 +170,40 @@ const entry: SceneEntry = {
       refreshKpi()
     })
 
+    const ackedAlarms = new Set<string>()
     const alarmSub = ctx.data.subscribe({ contract: PRODUCTION_ALARM_CONTRACT }, (env) => {
       const a = decodeAlarm(env)
       if (!a) return
+      // 已确认的告警不被数据流 resurrect（演示为客户端记忆；
+      // 生产部署经命令通道写入服务端，§81）
+      if (ackedAlarms.has(a.alarmId)) return
       alarms.set(a.alarmId, a)
       refreshKpi()
     })
+    function acknowledgeAlarm(alarmId: string): void {
+      ackedAlarms.add(alarmId)
+      refreshKpi()
+    }
+
+    // B4: 业务状态快照导出（值班报告）
+    function exportSnapshot(): void {
+      const snapshot = {
+        exportedAt: new Date().toISOString(),
+        worldMode: state.worldMode,
+        site: site.id,
+        kpi: state.kpi,
+        tasks: state.tasks,
+        alarms: state.alarms,
+        cranes: [...craneStates.entries()].map(([code, s]) => ({ code, ...s }))
+      }
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `production-snapshot-${Date.now()}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    }
 
     // World mode is orthogonal to the scene (§28): reflect it, never remount.
     const sessionSub = ctx.world.onSessionChanged((session) => {

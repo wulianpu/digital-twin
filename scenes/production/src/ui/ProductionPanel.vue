@@ -12,9 +12,18 @@ const props = defineProps<{
   selectedCrane: { code: string; state: CraneState } | undefined
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   setView: [view: 'map' | 'graphics']
+  ackAlarm: [alarmId: string]
+  exportSnapshot: []
 }>()
+
+function ack(alarmId: string): void {
+  emit('ackAlarm', alarmId)
+}
+function exportSnapshot(): void {
+  emit('exportSnapshot')
+}
 </script>
 
 <template>
@@ -66,6 +75,12 @@ defineEmits<{
       </div>
     </div>
 
+    <div class="prod-actions">
+      <button class="twin-btn prod-export" data-export-snapshot @click="exportSnapshot">
+        导出状态快照
+      </button>
+    </div>
+
     <div class="prod-section">任务</div>
     <div class="prod-tasks">
       <div v-for="t in props.tasks" :key="t.taskId" class="prod-task">
@@ -85,7 +100,10 @@ defineEmits<{
         class="prod-alarm"
         :class="a.severity"
       >
-        {{ a.message }}
+        <span>{{ a.message }}</span>
+        <button class="twin-btn prod-ack" :data-ack-alarm="a.alarmId" @click="ack(a.alarmId)">
+          确认
+        </button>
       </div>
     </div>
   </div>
@@ -234,5 +252,26 @@ defineEmits<{
 .prod-alarm.info {
   border-color: #4f9cf9;
   background: rgba(79, 156, 249, 0.1);
+}
+
+.prod-alarm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prod-ack {
+  padding: 1px 8px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.prod-actions {
+  margin-bottom: 8px;
+}
+
+.prod-export {
+  font-size: 12px;
 }
 </style>

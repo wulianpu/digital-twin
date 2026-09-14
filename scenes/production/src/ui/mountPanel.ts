@@ -16,6 +16,8 @@ export interface ProductionPanelState {
 export interface ProductionPanelBindings {
   state: ProductionPanelState
   onSetView(view: 'map' | 'graphics'): void
+  onAckAlarm(alarmId: string): void
+  onExport(): void
 }
 
 export interface ProductionPanelHandle {
@@ -39,7 +41,9 @@ export function mountProductionPanel(
           tasks: state.tasks,
           alarms: state.alarms,
           selectedCrane: state.selectedCrane,
-          onSetView: bindings.onSetView
+          onSetView: bindings.onSetView,
+          onAckAlarm: bindings.onAckAlarm,
+          onExport: bindings.onExport
         })
     }
   })

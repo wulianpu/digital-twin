@@ -16,6 +16,7 @@ import {
   createWebSocketSource,
   type DataApi,
   type DataSource,
+  type ReplaySource,
   type WebSocketSource
 } from '@twin/world-client'
 import {
@@ -70,6 +71,10 @@ export interface PortalFoundation {
   host: SceneHost
   gateway: DemoGateway
   config: PortalConfig
+  /** 单次 tick：驱动演示网关 / HISTORY 回放推进 / 模式同步（测试与定时器共用）。 */
+  tick(): void
+  /** 全局实体搜索（WorldClient 缓存键，I7/B2）。 */
+  searchEntities(term: string, limit?: number): Array<{ contract: string; key: string }>
   connection(): ConnectionState
   workspace: {
     setContainers(c: ViewportContainers): void
@@ -100,6 +105,11 @@ export function buildFoundation(
 
   const gateway = createDemoGateway()
 
+  // 预置 20 分钟历史（必须在 buildHistorySource 之前落环）
+  for (let t = Date.now() - 20 * 60_000; t < Date.now(); t += 1000) {
+    gateway.tick('live', t)
+  }
+
   // I1-2: a configured platform gateway replaces the DEMO live source only;
   // history/simulation keep the demo sources until the server APIs land (I3).
   let configuredLiveSource: WebSocketSource | undefined
@@ -114,14 +124,14 @@ export function buildFoundation(
 
   // I3-4：历史/仿真源的**唯一生产替换点**。接服务端 API 后只改这个函数
   // （协议 docs/gateway-protocol.md §7/§8），WorldClient 与 Scene 零修改。
-  function createHistorySimulationSources(): { history: DataSource; simulation: DataSource } {
+  function createHistorySimulationSources(): { history: ReplaySource; simulation: DataSource } {
     // 未配置服务端历史/仿真 API：使用演示录制源与确定性仿真源。
     return { history: gateway.buildHistorySource(), simulation: gateway.simulation }
   }
-  const { history, simulation } = createHistorySimulationSources()
+  const { history: historySource, simulation: simulationSource } = createHistorySimulationSources()
 
   const data = new WorldClient({
-    sources: [liveSource, history, simulation],
+    sources: [liveSource, historySource, simulationSource],
     sweepIntervalMs: 0
   })
 
@@ -224,17 +234,20 @@ export function buildFoundation(
     }
   })
 
-  // One gateway stream drives live AND simulation from the world clock.
-  const tickTimer = setInterval(() => {
+  // One gateway stream drives live AND simulation from the world clock;
+  // HISTORY 由回放源跟随虚拟时钟推进（A1：seek 随 tick 持续驱动，
+  // 时间倍速/拖动立即生效；并自动同步 WorldClient 的模式路由）。
+  function foundationTick(): void {
     const time = world.time.now()
+    if (data.mode !== time.mode) data.setMode(time.mode)
+    if (time.mode === 'history') {
+      historySource.seek(time.epochMillis)
+      return
+    }
     gateway.tick(time.mode === 'simulation' ? 'simulation' : 'live', time.epochMillis)
-  }, 250)
-  tickTimer.unref?.()
-
-  // Pre-seed 20 minutes of history so History mode has material immediately.
-  for (let t = Date.now() - 20 * 60_000; t < Date.now(); t += 1000) {
-    gateway.tick('live', t)
   }
+  const tickTimer = setInterval(foundationTick, 250)
+  tickTimer.unref?.()
 
   const siteMap = new Map(
     DEMO_SITES.map((s) => [s.id, { origin: s.origin, bounds: s.bounds }])
@@ -311,6 +324,10 @@ export function buildFoundation(
     host,
     gateway,
     config,
+    tick: foundationTick,
+    searchEntities(term: string, limit = 8) {
+      return data.search(term, limit)
+    },
     connection(): ConnectionState {
       const ws = configuredLiveSource
       return {

@@ -33,14 +33,21 @@ onMounted(() => {
     graphics: rootEl.value?.graphicsContainer ?? undefined
   })
   containersReady = true
+  // I7 修复：ViewApi 主驱动默认跟随地图（此前从未设置，focus/setTarget 为空操作）
+  foundation.workspace.setPrimary('map')
   coordinator.preload('global-ships')
   // I5: URL 参数驱动的性能采集 / soak / context loss 演练（生产访问不受影响）
   setupPerfAutomation(foundation, coordinator)
   // S1: 场景内视图切换 → 壳层视图模式联动（DOM 事件，场景保持应用无关）
   rootEl.value?.uiContainer?.addEventListener('twin-scene-view', (e) => {
     const view = (e as CustomEvent<{ view?: 'map' | 'graphics' }>).detail?.view
-    if (view === 'graphics') viewMode.value = 'graphics'
-    else if (view === 'map') viewMode.value = 'map'
+    if (view === 'graphics') {
+      viewMode.value = 'graphics'
+      foundation.workspace.setPrimary('scene')
+    } else if (view === 'map') {
+      viewMode.value = 'map'
+      foundation.workspace.setPrimary('map')
+    }
   })
   if (pendingScene) {
     const target = pendingScene
