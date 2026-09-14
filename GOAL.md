@@ -182,3 +182,8 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   写入 soak-24h.json，判定自动；benchmarks.md 已回填 Run #5 启动记录与
   DoD 对照，operations.md 命令同步。验证：compose exit 0、healthz ok、
   容器 healthy、首页 200。
+- 2026-09-14 **工程化收尾**：docs/benchmarks.md §3 验收对照表补 DoD #1 ✅ 行；
+  初始化本地 git 仓库并完成首次提交（基线 + I1-I7 全部成果入库；
+  .gitignore 覆盖构建产物/视觉回归 current/soak 中间报告；遵守边界不推送远端）。
+  24h 长跑继续（21:15 检查点：进程活跃、容器 healthy、healthz ok）。
+  验证：`pnpm verify` 全绿 133/133。
