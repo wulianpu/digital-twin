@@ -248,6 +248,12 @@ export async function runToggleStress(
     result.toggles++
   }
 
+  // Issue #17-r2：CI 上 three chunk 的动态导入可能慢于整段点击循环——
+  // 等待首次 3D boot 真正发生（上限 3s），保证 graphicsMounts 语义确定
+  for (let i = 0; i < 300 && counters.graphicsUseCalls === 0; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+
   result.graphicsMounts = counters.graphicsUseCalls
   result.sceneStillMounted = host.isActive && mount.state === 'active'
   result.selectionKept = selection.isSelected({ namespace: 'compliance', id: 'KEEP-ME' })

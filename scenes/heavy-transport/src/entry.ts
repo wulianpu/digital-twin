@@ -140,12 +140,21 @@ const entry: SceneEntry = {
       if (view === 'graphics') {
         if (!graphicsHandle && !graphicsBooting) {
           graphicsBooting = true
-          const { mountGraphics } = await import('./graphics')
-          graphicsHandle = await mountGraphics(ctx, plan)
-          graphicsBooting = false
-          if (ctx.signal.aborted) {
-            graphicsHandle.dispose()
-            graphicsHandle = undefined
+          try {
+            const { mountGraphics } = await import('./graphics')
+            graphicsHandle = await mountGraphics(ctx, plan)
+            graphicsBooting = false
+            if (ctx.signal.aborted) {
+              graphicsHandle.dispose()
+              graphicsHandle = undefined
+              return
+            }
+          } catch (error) {
+            // Issue #17-r2：unmount 竞态下的 SceneUnmountedError 静默放弃
+            //（Host 已兜底回收），booting 标志必须复位以免永久卡死；
+            // 真实失败（非 teardown）仍上抛给 UI。
+            graphicsBooting = false
+            if (!ctx.signal.aborted) throw error
             return
           }
           // Scene-private preview loop (§28) — the engine's frame loop is

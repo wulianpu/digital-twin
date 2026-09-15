@@ -85,16 +85,22 @@ const entry: SceneEntry = {
       if (view === 'graphics') {
         if (!graphicsHandle && !graphicsBooting) {
           graphicsBooting = true
-          // Lazy: three + graphics chunk download HERE, on demand (§26).
-          const { mountGraphics } = await import('./graphics')
-          graphicsHandle = await mountGraphics(ctx, layout, {
-            onPickStack: (code) => applySelection(code ?? undefined)
-          })
-          // 问题6：late bootstrap——unmount 后完成的异步引导立即自毁
-          if (ctx.signal.aborted) {
-            graphicsHandle.dispose()
-            graphicsHandle = undefined
+          try {
+            // Lazy: three + graphics chunk download HERE, on demand (§26).
+            const { mountGraphics } = await import('./graphics')
+            graphicsHandle = await mountGraphics(ctx, layout, {
+              onPickStack: (code) => applySelection(code ?? undefined)
+            })
+            // 问题6：late bootstrap——unmount 后完成的异步引导立即自毁
+            if (ctx.signal.aborted) {
+              graphicsHandle.dispose()
+              graphicsHandle = undefined
+              graphicsBooting = false
+              return
+            }
+          } catch (error) {
             graphicsBooting = false
+            if (!ctx.signal.aborted) throw error
             return
           }
           graphicsBooting = false

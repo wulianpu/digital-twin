@@ -88,15 +88,21 @@ const entry: SceneEntry = {
       if (view === 'graphics') {
         if (!graphicsHandle && !graphicsBooting) {
           graphicsBooting = true
-          const { mountGraphics } = await import('./graphics')
-          graphicsHandle = await mountGraphics(ctx)
-          graphicsBooting = false
-          if (ctx.signal.aborted) {
-            graphicsHandle.dispose()
-            graphicsHandle = undefined
+          try {
+            const { mountGraphics } = await import('./graphics')
+            graphicsHandle = await mountGraphics(ctx)
+            graphicsBooting = false
+            if (ctx.signal.aborted) {
+              graphicsHandle.dispose()
+              graphicsHandle = undefined
+              return
+            }
+            graphicsHandle.updateShips(states)
+          } catch (error) {
+            graphicsBooting = false
+            if (!ctx.signal.aborted) throw error
             return
           }
-          graphicsHandle.updateShips(states)
         }
         mapHandle?.suspend()
         ctx.graphics?.currentContext?.resume()
