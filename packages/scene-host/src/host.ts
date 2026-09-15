@@ -10,6 +10,12 @@ import {
   scopedUiApi
 } from './scoped'
 import {
+  scopedWorldApi,
+  scopedSpatialApi,
+  scopedSelectionApi,
+  scopedViewApi
+} from './scopedLifecycle'
+import {
   createRevocableContext,
   type ContextServices,
   type ContextState
@@ -233,12 +239,14 @@ class HostMountImpl implements HostMount {
     this.revocable = createRevocableContext(
       this.sceneId,
       {
-        world: services.world,
-        spatial: services.spatial,
+        // I10-1: 全部 capability 经 scoped wrapper 注入——
+        // scope dispose 后写操作变为 no-op，防止 zombie write
+        world: scopedWorldApi(services.world, this.scope),
+        spatial: scopedSpatialApi(services.spatial, this.scope),
         data: scopedDataApi(services.data, this.scope),
         assets: scopedAssetApi(services.assets, this.scope),
-        selection: services.selection,
-        view: services.view,
+        selection: scopedSelectionApi(services.selection, this.scope),
+        view: scopedViewApi(services.view, this.scope),
         ui: scopedUiApi(this.ui, this.scope),
         map: services.map ? scopedMapAccess(services.map, this.scope) : undefined,
         graphics: services.graphics

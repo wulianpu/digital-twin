@@ -270,3 +270,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
 
 - 2026-09-15 **Issue #3 已关闭**（P0 回归修复确认生效——coordinator 回滚测试 4/4、MountScope 测试 4/4、hostile compliance 16/16 均通过）。无需额外代码变更，修复已在 I10/I11 轮中完成并推送（4000b5e）。、compliance 16/16、e2e 9/9。
   已推送 origin main（4000b5e）。Issue #3 关闭。
+
+- 2026-09-15 **Issue #4 修复（P0：非 Engine capability 生命周期隔离，防 zombie write）**：
+  ①新增 `MountScope.assertActive(what)`（写拒绝语义，区别于资源创建的 assertCanCreate）；
+  ②新增 `scopedLifecycle.ts`：scopedWorldApi/scopedSpatialApi/scopedSelectionApi/scopedViewApi
+  四个 wrapper——纯读透传、状态写非 active 抛 SceneScopeClosedError（fail-fast）、
+  所有返回 Disposable 的 Foundation API（onSessionChanged/onTick/sites.register/onChange/
+  registerFrame/onActiveFrameChanged/registerVerticalOffset）立即 scope.track 兜底；
+  ③`world.clock` 以 scoped facade 暴露：now/getMode 透传，setMode/seek/setSpeed 走
+  assertActive（Clock 控制权归 App/Composition Root，Issue 建议方案 4-2）；
+  ④修复 wrapper 立即调用 bug（初版 guardWrite 返回函数而非执行——类型正确但运行时
+  写操作全部静默失效，新增回归测试暴露）；
+  ⑤hostile fixtures 新增 8 个：forget-selection/world-session/spatial-listener +
+  zombie-selection/world-scope/world-clock/spatial-frame/view-write（探针断言 REJECTED）；
+  ⑥新增 scoped-lifecycle.test.ts 9 个用例（含 SceneHost 集成 zombie 用例）。
+  验证：typecheck 0 错误、167/167 单测、compliance 24/24、e2e 9/9、lint 干净。

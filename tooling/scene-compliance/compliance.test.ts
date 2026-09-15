@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SceneEntry } from '@twin/sdk'
 import { runComplianceCycles, runToggleStress, type ComplianceReport } from './src/runCompliance'
+import { zombieWriteProbes } from './fixtures/hostile-scenes'
 
 /**
  * Scene Compliance (§72) + Freeze Gates #1/#2/#4/#5.
@@ -131,6 +132,44 @@ describe('Hostile scene compliance（Issue #1 问题5）', () => {
     // 超时后 Host 仍然完成 teardown
     expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
   }, 15_000)
+})
+
+describe('Hostile scene compliance: 非 Engine capability 生命周期隔离（Issue #4）', () => {
+  const LISTENER_FIXTURES = [
+    { id: 'hostile:forget-selection-listener', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetSelectionListener) },
+    { id: 'hostile:forget-world-session-listener', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetWorldSessionListener) },
+    { id: 'hostile:forget-spatial-listener', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetSpatialListener) }
+  ]
+
+  it.each(LISTENER_FIXTURES.map(f => [f.id, f.load] as const))(
+    '%s: Host track 兜底释放，无 teardown 噪音',
+    async (sceneId, load) => {
+      const report = await runComplianceCycles(sceneId, load, { cycles: 2, framesPerCycle: 5 })
+      expect(report.errors).toEqual([])
+      expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
+    },
+    15_000
+  )
+
+  const ZOMBIE_FIXTURES: Array<{ id: string; key: string; load: () => Promise<unknown> }> = [
+    { id: 'hostile:zombie-selection-write', key: 'selection', load: () => import('./fixtures/hostile-scenes').then(m => m.zombieSelectionWrite) },
+    { id: 'hostile:zombie-world-scope-write', key: 'world-scope', load: () => import('./fixtures/hostile-scenes').then(m => m.zombieWorldScopeWrite) },
+    { id: 'hostile:zombie-world-clock-write', key: 'world-clock', load: () => import('./fixtures/hostile-scenes').then(m => m.zombieWorldClockWrite) },
+    { id: 'hostile:zombie-spatial-frame-write', key: 'spatial-frame', load: () => import('./fixtures/hostile-scenes').then(m => m.zombieSpatialFrameWrite) },
+    { id: 'hostile:zombie-view-write', key: 'view', load: () => import('./fixtures/hostile-scenes').then(m => m.zombieViewWrite) }
+  ]
+
+  it.each(ZOMBIE_FIXTURES.map(f => [f.id, f.key, f.load] as const))(
+    '%s: stale write 被 SceneScopeClosedError 拒绝',
+    async (sceneId, key, load) => {
+      const report = await runComplianceCycles(sceneId, load, { cycles: 2, framesPerCycle: 5 })
+      expect(report.errors).toEqual([])
+      expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
+      // Issue #4 核心验收：unmount 后的缓存引用写必须被拒，而非静默生效
+      expect(zombieWriteProbes[key]).toBe('REJECTED')
+    },
+    15_000
+  )
 })
 
 describe('Gate #2: production 2D ↔ 3D toggle ×100', () => {

@@ -1,10 +1,26 @@
 import type { SceneEntry } from '@twin/sdk'
+import { SceneScopeClosedError } from '@twin/scene-host'
 
 /**
  * Hostile / broken scene fixtures（Issue #1 问题5）：
  * 每个 fixture 故意在某个环节"写坏"，验证 Host 生命周期边界——
  * 正常 Scene 能 cleanup 不够；坏 Scene 也逃不出 Host。
  */
+
+/**
+ * Issue #4 zombie-write 探针：记录 stale write 的实际结局，
+ * 供 compliance 断言（必须为 REJECTED）。
+ */
+export const zombieWriteProbes: Record<string, string> = {}
+
+function probe(id: string, attempt: () => void): void {
+  try {
+    attempt()
+    zombieWriteProbes[id] = 'ALLOWED'
+  } catch (error) {
+    zombieWriteProbes[id] = error instanceof SceneScopeClosedError ? 'REJECTED' : 'OTHER'
+  }
+}
 
 /** 忘记清理 data subscription */
 export const forgetDataSubscription: SceneEntry = {
@@ -84,5 +100,98 @@ export const lateGraphicsBootstrap: SceneEntry = {
       // late resolve：scope 已 dispose → root 被 detach
     }).catch(() => {})
     return { unmount() {} }
+  }
+}
+
+/** -------------------------------------------------------------- Issue #4 */
+
+/** 忘记清理 selection.onChange listener（Host 必须 track 兜底） */
+export const forgetSelectionListener: SceneEntry = {
+  async mount(ctx) {
+    ctx.selection.onChange(() => {})
+    return { unmount() { /* 故意不清理 */ } }
+  }
+}
+
+/** 忘记清理 world.onSessionChanged listener */
+export const forgetWorldSessionListener: SceneEntry = {
+  async mount(ctx) {
+    ctx.world.onSessionChanged(() => {})
+    return { unmount() { /* 故意不清理 */ } }
+  }
+}
+
+/** 忘记清理 spatial.onActiveFrameChanged listener */
+export const forgetSpatialListener: SceneEntry = {
+  async mount(ctx) {
+    ctx.spatial.onActiveFrameChanged(() => {})
+    return { unmount() { /* 故意不清理 */ } }
+  }
+}
+
+/** 缓存 selection 引用，unmount 后 zombie setPrimary */
+export const zombieSelectionWrite: SceneEntry = {
+  async mount(ctx) {
+    const cached = ctx.selection
+    return {
+      unmount() {
+        probe('selection', () => cached.setPrimary({ namespace: 'hostile', id: 'zombie' }))
+      }
+    }
+  }
+}
+
+/** 缓存 world 引用，unmount 后 zombie setScope（改写全局会话范围） */
+export const zombieWorldScopeWrite: SceneEntry = {
+  async mount(ctx) {
+    const cached = ctx.world
+    return {
+      unmount() {
+        probe('world-scope', () => cached.setScope({ kind: 'global' }))
+      }
+    }
+  }
+}
+
+/** 缓存 world 引用，unmount 后 zombie clock.seek（篡改全局时间线） */
+export const zombieWorldClockWrite: SceneEntry = {
+  async mount(ctx) {
+    const cached = ctx.world
+    return {
+      unmount() {
+        probe('world-clock', () => cached.clock.seek(0))
+      }
+    }
+  }
+}
+
+/** 缓存 spatial 引用，unmount 后 zombie setActiveFrame（污染空间上下文） */
+export const zombieSpatialFrameWrite: SceneEntry = {
+  async mount(ctx) {
+    const cached = ctx.spatial
+    const frame = cached.ensureEnuFrame('hostile-frame', {
+      longitudeDegrees: 0,
+      latitudeDegrees: 0,
+      heightMeters: 0,
+      verticalReference: 'ellipsoid'
+    })
+    return {
+      unmount() {
+        void frame
+        probe('spatial-frame', () => cached.setActiveFrame('hostile-frame'))
+      }
+    }
+  }
+}
+
+/** 缓存 view 引用，unmount 后 zombie goToSite（迟到的"自动跳镜头"） */
+export const zombieViewWrite: SceneEntry = {
+  async mount(ctx) {
+    const cached = ctx.view
+    return {
+      unmount() {
+        probe('view', () => { void cached.goToSite('hostile-site') })
+      }
+    }
   }
 }

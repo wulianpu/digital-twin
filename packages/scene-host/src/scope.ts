@@ -16,7 +16,7 @@ export class SceneScopeClosedError extends Error {
   readonly what: string
   constructor(what: string) {
     super(
-      `[scene-host] MountScope closing/disposed：拒绝创建新的 ${what}（§11/§14 生命周期隔离）`
+      `[scene-host] MountScope closing/disposed：拒绝 ${what}（§11/§14 生命周期隔离）`
     )
     this.name = 'SceneScopeClosedError'
     this.what = what
@@ -37,6 +37,14 @@ export class MountScope {
   }
 
   assertCanCreate(what: string): void {
+    if (this._state !== 'active') throw new SceneScopeClosedError(what)
+  }
+
+  /**
+   * 是否允许平台状态写操作（Issue #4 stale-write 防线）。
+   * unmount 开始后，Scene 不得再改写全局 world/selection/spatial/view 状态。
+   */
+  assertActive(what: string): void {
     if (this._state !== 'active') throw new SceneScopeClosedError(what)
   }
 
