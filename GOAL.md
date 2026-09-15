@@ -492,3 +492,21 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④测试 +5（frame 隔离与 quarantine / pick 隔离 / 多失败全隔离 /
   sink 自身 throw 防御 / sink 降级）。
   验证：pnpm verify 全绿、260/260 单测、compliance 40/40、e2e 10/10。
+
+- 2026-09-16 **Issue #16 修复（P1：Portal teardown 终止 Coordinator/Host）**：
+  ①SceneCoordinator.close()：terminal 状态（closed + generation++ + 全部
+  loadControllers abort + latestIntent 终态 no-mount + active ownership 清空）
+  ——in-flight load/mount/rollback/reconcile 全部失去 commit authority；
+  close 后 select()/preload() 无任何副作用；幂等、并发共享同一 Promise、
+  等待 reconcile 收敛；
+  ②SceneHost.shutdown()：host-level terminal state——先 hostDisposed 禁止新
+  mount，再走完整 unmount 序列（Scene unmount/MountScope/revoke）；幂等、
+  并发共享；shutdown 后 mount() fail-fast（不解析 viewport）；
+  ③Composition Root 终止顺序反转为 ownership 顺序：teardown 改 async——
+  coordinator.close() → await foundation.dispose()（内含 await host.shutdown()
+  先于 Data/Map/Graphics/Asset 销毁）→ app.unmount()；activeApp 持有
+  coordinator；会话过期在旧 runtime 终止后才挂新登录壳；
+  ④确定性测试 +5（真实 SceneHost：teardown 顺序与 unmount-once/revoke、
+  pending load late resolve 不产生 Host mutation、pending mount 被 Host 终态
+  拒绝、close/shutdown 幂等共享、close 后 select/preload 无副作用）。
+  验证：pnpm verify 全绿、265/265 单测、compliance 40/40、e2e 10/10。

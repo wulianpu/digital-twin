@@ -28,7 +28,13 @@ const identity: DemoIdentityAdapter = createDemoIdentityAdapter()
 const appHost = document.getElementById('app')!
 const telemetry = createTelemetry([createConsoleSink()])
 
-let activeApp: { app: ReturnType<typeof createApp>; foundation: PortalFoundation } | undefined
+let activeApp:
+  | {
+      app: ReturnType<typeof createApp>
+      foundation: PortalFoundation
+      coordinator: SceneCoordinator
+    }
+  | undefined
 let expiryDisposal: { dispose(): void } | undefined
 
 async function start(): Promise<void> {
@@ -40,10 +46,10 @@ async function start(): Promise<void> {
   }
 
   // 会话过期钩子（I2-3）：token 失效 / 服务端吊销 → 回到登录壳。
+  // Issue #16：teardown 为异步——旧 runtime 完整终止后才挂新登录壳/新会话。
   expiryDisposal = identity.onSessionExpired(() => {
     telemetry.captureEvent('session.expired')
-    teardown()
-    mountLogin('会话已过期，请重新登录')
+    void teardown().finally(() => mountLogin('会话已过期，请重新登录'))
   })
 }
 
@@ -61,13 +67,20 @@ function mountLogin(message?: string): void {
   loginApp.mount(appHost)
 }
 
-function teardown(): void {
+// Issue #16：按 ownership 反向顺序终止——
+// 1) close Coordinator（停止 Scene 事务生产者）
+// 2) await foundation.dispose()（内含 Host shutdown：Scene unmount/MountScope/revoke，
+//    然后才销毁 Data/Map/Graphics/Asset owner）
+// 3) unmount Vue
+async function teardown(): Promise<void> {
   expiryDisposal?.dispose()
   expiryDisposal = undefined
   if (activeApp) {
-    activeApp.foundation.dispose()
-    activeApp.app.unmount()
+    const { app, foundation, coordinator } = activeApp
     activeApp = undefined
+    await coordinator.close()
+    await foundation.dispose()
+    app.unmount()
   }
 }
 
@@ -113,7 +126,7 @@ function bootstrap(user: UserIdentity): void {
   store.user = { name: user.name, permissions: [...user.permissions] }
 
   app.mount(appHost)
-  activeApp = { app, foundation }
+  activeApp = { app, foundation, coordinator }
 
   // I6-3: telemetry + 诊断导出句柄（window.__twin）。
   setupTelemetry(telemetry, foundation)

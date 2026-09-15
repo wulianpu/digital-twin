@@ -69,8 +69,32 @@ export interface HostMount extends Omit<SceneMount, 'unmount'> {
  */
 export class SceneHost {
   private current: HostMountImpl | undefined
+  // Issue #16：host-level terminal state——app teardown 后 mount() 永久 fail-fast，
+  // 杜绝旧 Coordinator 的 late continuation 重建 HostMountImpl。
+  private hostDisposed = false
+  private shutdownPromise: Promise<void> | undefined
 
   constructor(private readonly options: SceneHostOptions) {}
+
+  /** 终态只读量（应用层可断言 teardown 已完成）。 */
+  get isDisposed(): boolean {
+    return this.hostDisposed
+  }
+
+  /**
+   * Issue #16：app-owned terminal shutdown——
+   * 先进入 closing（禁止新 mount）→ 等待当前 Scene 走完
+   * unmount / MountScope / revoke 全序列 → disposed。幂等；并发调用共享
+   * 同一个 Promise。
+   */
+  shutdown(): Promise<void> {
+    if (this.shutdownPromise) return this.shutdownPromise
+    this.hostDisposed = true
+    this.shutdownPromise = (async () => {
+      await this.unmount()
+    })()
+    return this.shutdownPromise
+  }
 
   get activeMount(): HostMount | undefined {
     return this.current
@@ -86,6 +110,10 @@ export class SceneHost {
   }
 
   async mount(entry: SceneEntry, mountOptions: MountOptions = {}): Promise<HostMount> {
+    if (this.hostDisposed) {
+      // #16：terminal 之后绝不创建新的 HostMountImpl（不解析 viewport/ui）
+      return Promise.reject(new Error('[scene-host] host shutdown; mount rejected'))
+    }
     if (this.current && this.current.state !== 'unmounted') {
       await this.current.unmount()
     }

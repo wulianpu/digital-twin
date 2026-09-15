@@ -58,6 +58,9 @@ export class SceneCoordinator {
   private latestIntent: SwitchIntent = { generation: 0, kind: 'noop' }
   /** reconcile 串行化：补偿恢复不与其它补偿并发争抢 Host。 */
   private reconcileTail: Promise<void> = Promise.resolve()
+  // #16：app 生命周期终态——close() 后不再产生任何 Host mutation / 状态回写
+  private closed = false
+  private closeTail: Promise<void> | undefined
 
   constructor(
     private readonly host: SceneHost,
@@ -74,17 +77,49 @@ export class SceneCoordinator {
     return this.active?.sceneId
   }
 
+  /** 终态只读量（应用层可断言 teardown 已完成）。 */
+  get isClosed(): boolean {
+    return this.closed
+  }
+
+  /**
+   * #16：app 生命周期终态。close 开始后：
+   * - generation++ → 所有 in-flight isCurrent() 立即 false；
+   * - loadControllers 全部 abort；
+   * - latestIntent 进入 terminal no-mount（reconcile 的 stillNeededFor 同时被
+   *   generation 失效 veto）；
+   * - select()/preload() 不再产生任何副作用；
+   * - 等待 in-flight reconcile 收敛后返回（幂等，重复调用共享同一 Promise）。
+   */
+  close(): Promise<void> {
+    if (this.closeTail) return this.closeTail
+    this.closed = true
+    this.generation++
+    this.latestIntent = { generation: this.generation, kind: 'noop' }
+    for (const controller of this.loadControllers.values()) controller.abort()
+    this.loadControllers.clear()
+    this.active = undefined
+    this.closeTail = this.reconcileTail.catch(() => {})
+    return this.closeTail
+  }
+
   get(sceneId: SceneId): SceneDefinition | undefined {
     return this.catalog.find((d) => d.id === sceneId)
   }
 
   /** Preload scene CODE only — engines and world content stay lazy (§61). */
   preload(sceneId: SceneId): void {
+    if (this.closed) return
     const definition = this.get(sceneId)
     void definition?.load().catch(() => {})
   }
 
   async select(sceneId: SceneId, options: { force?: boolean } = {}): Promise<void> {
+    if (this.closed) {
+      // #16：应用已 teardown——拒绝新的 selection，不产生任何副作用
+      this.options.onError?.(new Error(`coordinator closed; scene "${sceneId}" rejected`), sceneId)
+      return
+    }
     const definition = this.get(sceneId)
     if (!definition) {
       // unknown scene 是编程错误而非用户选择 intent，不参与 generation 失效
@@ -280,6 +315,7 @@ export class SceneCoordinator {
       this.generation === serving && this.latestIntent.kind === 'noop'
     const run = async (): Promise<void> => {
       while (true) {
+        if (this.closed) return // #16：终态后禁止补偿性 Host mutation
         if (!previous || this.newestIntentWillMount()) return
         const serving = this.generation
         if (!stillNeededFor(serving)) continue // 新 generation 已到来，重估

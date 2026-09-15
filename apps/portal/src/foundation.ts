@@ -90,7 +90,7 @@ export interface PortalFoundation {
     getPrimary(): 'map' | 'scene' | 'none'
     setPrimary(kind: 'map' | 'scene'): void
   }
-  dispose(): void
+  dispose(): Promise<void>
 }
 
 export function buildFoundation(
@@ -393,8 +393,12 @@ export function buildFoundation(
       }
     },
     workspace,
-    dispose() {
+    async dispose() {
       clearInterval(tickTimer)
+      // Issue #16：Composition Root 终止顺序——先停止 Scene 生产者
+      // （Host shutdown：Scene unmount / MountScope / revoke 完整序列），
+      // 再销毁 consumer/owner（Data/Map/Graphics/Asset）。
+      await host.shutdown()
       data.dispose()
       configuredLiveSource?.dispose()
       gateway.dispose()
