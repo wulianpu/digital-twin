@@ -226,6 +226,11 @@ export function buildFoundation(
     stateBuffer: gateway.stateBuffer,
     quality: config.defaultQuality,
     maxQuality: 'EXHIBITION',
+    // Issue #15：Scene callback 故障可观测（quarantine 由引擎负责，
+    // 去向由 Composition Root 决定）
+    onCallbackError: (error, meta) => {
+      console.error(`[portal] scene ${meta.kind} callback failed (quarantined)`, error)
+    },
     // I4-3：真实 3D Tiles 入口（经 TilesSystem，诊断随 getDiagnostics 输出）。
     tiles: {
       maxBytes: config.tilesMaxBytes,

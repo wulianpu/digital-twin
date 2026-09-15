@@ -72,6 +72,11 @@ export interface SceneEngineOptions {
   getAssetLeaseCount?(): number
   /** 视觉回归 fixture 模式（I9-6）：冻结水体动画时间，确定性渲染。 */
   visualFixture?: boolean
+  /**
+   * Issue #15：Scene callback fault boundary 的上报通道（Composition Root
+   * 决定去向：console/telemetry/恢复动作）。缺省为内部 console.error。
+   */
+  onCallbackError?: (error: unknown, meta: { kind: 'frame' | 'pick' }) => void
 }
 
 export interface SceneViewHandle {

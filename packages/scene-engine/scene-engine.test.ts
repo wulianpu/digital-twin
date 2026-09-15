@@ -627,3 +627,104 @@ function makeRuntimeFactoryRt() {
     resume: () => {}
   }
 }
+
+/** ---------------- Issue #15：Scene callback fault boundary（隔离 + quarantine） */
+
+import { dispatchCallbacks, makeFaultSink } from './src/callbacks'
+
+describe('callback fault boundary（Issue #15）', () => {
+  it('frame：A throw → B 仍执行，A 被 quarantine，sink 只上报一次', () => {
+    const subs = new Set<(info: { frame: number }) => void>()
+    const sink = vi.fn()
+    const executed: string[] = []
+    const bad = () => {
+      executed.push('bad')
+      throw new Error('scene frame failed')
+    }
+    const good = () => {
+      executed.push('good')
+    }
+    subs.add(bad)
+    subs.add(good)
+
+    dispatchCallbacks(subs, { frame: 1 }, 'frame', sink)
+
+    // 本帧：bad 执行（失败）后 good 仍执行（无饥饿）
+    expect(executed).toEqual(['bad', 'good'])
+    // quarantine：bad 被移除，sink 只收到一次
+    expect(subs.has(bad)).toBe(false)
+    expect(subs.has(good)).toBe(true)
+    expect(sink).toHaveBeenCalledTimes(1)
+    expect(sink).toHaveBeenCalledWith(expect.any(Error), { kind: 'frame' })
+
+    // 下一帧：bad 不再调用（无 60fps error storm），good 继续
+    dispatchCallbacks(subs, { frame: 2 }, 'frame', sink)
+    expect(executed).toEqual(['bad', 'good', 'good'])
+    expect(sink).toHaveBeenCalledTimes(1)
+  })
+
+  it('pick：A throw → B 仍收到事件，meta.kind = pick', () => {
+    const subs = new Set<(e: { key: number }) => void>()
+    const sink = vi.fn()
+    const received: number[] = []
+    subs.add(() => {
+      throw new Error('pick handler failed')
+    })
+    subs.add((e) => received.push(e.key))
+
+    dispatchCallbacks(subs, { key: 7 }, 'pick', sink)
+
+    expect(received).toEqual([7])
+    expect(sink).toHaveBeenCalledWith(expect.any(Error), { kind: 'pick' })
+    expect(subs.size).toBe(1)
+  })
+
+  it('多个失败 callback：全部隔离、逐个上报，循环不中断', () => {
+    const subs = new Set<(i: number) => void>()
+    const sink = vi.fn()
+    let healthy = 0
+    subs.add(() => {
+      throw new Error('bad-1')
+    })
+    subs.add(() => {
+      throw new Error('bad-2')
+    })
+    subs.add(() => {
+      healthy++
+    })
+
+    dispatchCallbacks(subs, 1, 'frame', sink)
+
+    expect(healthy).toBe(1)
+    expect(sink).toHaveBeenCalledTimes(2)
+    expect(subs.size).toBe(1) // 仅健康 callback 保留，两个失败者均被隔离
+  })
+
+  it('sink 自身 throw 不影响 dispatch（防御性边界）', () => {
+    const subs = new Set<(i: number) => void>()
+    const healthy = vi.fn()
+    subs.add(() => {
+      throw new Error('bad')
+    })
+    subs.add(healthy)
+    const sink = vi.fn(() => {
+      throw new Error('sink exploded')
+    })
+
+    expect(() => dispatchCallbacks(subs, 1, 'frame', sink)).not.toThrow()
+    expect(healthy).toHaveBeenCalledTimes(1)
+  })
+
+  it('makeFaultSink：未提供 handler 时降级 console.error（一次）', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const sink = makeFaultSink(undefined)
+    const subs = new Set<(i: number) => void>()
+    const bad = () => {
+      throw new Error('boom')
+    }
+    subs.add(bad)
+    dispatchCallbacks(subs, 1, 'frame', sink)
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    errorSpy.mockRestore()
+  })
+})

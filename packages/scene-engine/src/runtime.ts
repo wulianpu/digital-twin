@@ -11,6 +11,7 @@ import type {
   WaterState
 } from './types'
 import { FrameLoop, type FrameCallback } from './frameLoop'
+import { dispatchCallbacks, makeFaultSink } from './callbacks'
 import { OrbitController } from './orbit'
 import { EnvironmentSystem } from './environment'
 import { GlobalEarthSystem } from './earth'
@@ -125,8 +126,11 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
 
   const frameSubs = new Set<FrameCallback>()
   const pickSubs = new Set<(e: PickEvent) => void>()
+  // Issue #15：Scene-facing callback fault boundary——逐个隔离、fail-stop
+  // quarantine、经 sink 上报一次；Engine-owned stages 不被业务异常阻断。
+  const faultSink = makeFaultSink(options.onCallbackError)
   picking.onPick((event) => {
-    for (const cb of [...pickSubs]) cb(event)
+    dispatchCallbacks(pickSubs, event, 'pick', faultSink)
   })
 
   // Shared floating-origin offset applied to BOTH scene graph roots so the
@@ -173,8 +177,10 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     )
     camera.lookAt(lookTarget)
 
-    for (const cb of [...frameSubs]) cb(info)
+    dispatchCallbacks(frameSubs, info, 'frame', faultSink)
 
+    // Engine-owned frame stages（Tiles / render）在 Scene callback 隔离之后
+    // 无条件继续（§27：Scene 故障不得逃逸出自身故障域）
     if (tiles.tilesetCount > 0) {
       tiles.frame(camera, renderer.domElement.clientWidth || 1, renderer.domElement.clientHeight || 1)
     }

@@ -479,3 +479,16 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   支持确定性 deferred 竞态测试；map-engine 以 vi.mock('maplibre-gl') 注入；
   ⑤测试 +8（graphics 4 + map 4：重试/并发共享/pending dispose/终态 fail-fast）。
   验证：pnpm verify 全绿、255/255 单测、compliance 40/40、e2e 10/10。
+
+- 2026-09-16 **Issue #15 修复（P1：SceneEngine callback fault boundary）**：
+  ①新增 `callbacks.ts`：`dispatchCallbacks` 逐 callback 隔离（try/catch per
+  callback）+ fail-stop quarantine（首次 throw 即从订阅集移除，Disposable 幂等
+  保持）+ fault sink 只上报一次（杜绝 60fps error storm）；
+  ②runtime.ts：frameSubs 与 pickSubs dispatch 全部走该边界——Engine-owned
+  frame stages（tiles.frame / renderer.render）在 Scene callback 异常后
+  无条件继续；Engine 自身错误不吞；
+  ③`SceneEngineOptions.onCallbackError`：Composition Root 可观测的 fault
+  channel（缺省降级 console.error）；portal/standalone 已接线；
+  ④测试 +5（frame 隔离与 quarantine / pick 隔离 / 多失败全隔离 /
+  sink 自身 throw 防御 / sink 降级）。
+  验证：pnpm verify 全绿、260/260 单测、compliance 40/40、e2e 10/10。
