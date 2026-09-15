@@ -412,3 +412,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③真实 SceneHost 竞态测试 +3（D 已 commit / D mount pending / 连续 noop intent
   重跑恢复）。
   验证：pnpm verify 全绿、232/232 单测、compliance 40/40、e2e 9/9。
+
+- 2026-09-16 **Issue #11 修复（P1：WorldClient mode/timeline generation 隔离）**：
+  ①revision 排序域按模式分区：`delivered` 改为 {mode → key → revision}——LIVE
+  保留 transport 乱序去重且游标跨模式往返持久（重连旧快照仍被去重）；
+  HISTORY/SIMULATION 进入即重置该模式游标+缓存分区（新时间线）；
+  ②timeline epoch：`DataApi.beginTimelineEpoch(mode)` + `ReplaySource.setOnSeek`
+  ——每次主动 seek/rewind（含 scrubber 拖动）重置游标，较低 revision 的历史帧
+  成为当前状态而非被当作 stale packet；foundation 已接线（seek→epoch）；
+  ③modeGeneration：setMode 递增；replaySnapshot/query 捕获 {mode,generation}，
+  旧 generation 异步 snapshot 晚到整批丢弃（不写 cache/游标/handler）；
+  source 转发回调校验当前 mode，detach 后晚到事件丢弃；
+  ④cache 按模式分区（peek/search/countStale/sweep 只读当前分区），跨模式
+  旧值不再被当作当前 truth；
+  ⑤测试：world-client +6（跨模式 revision/回退 seek/deferred 快照竞态/
+  last-mode-wins/切回 LIVE 三段/分区隔离）；history-replay +1（长期订阅
+  backward scrub 集成）；gateway-protocol.md 增加 §7.1 revision 排序域说明。
+  验证：pnpm verify 全绿、239/239 单测、compliance 40/40、e2e 9/9。

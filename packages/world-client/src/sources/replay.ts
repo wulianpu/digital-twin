@@ -9,14 +9,24 @@ export interface ReplayFrame {
 export interface ReplaySourceOptions {
   frames: readonly ReplayFrame[]
   loop?: boolean
+  /**
+   * Issue #11：seek 通知钩子——HISTORY/SIMULATION 的主动 seek/rewind 是
+   * 排序权威，宿主（foundation）借此通知 WorldClient 开启新的 timeline
+   * epoch（重置 revision 游标），使较低 revision 的历史帧能成为当前状态。
+   */
+  onSeek?: (timeMs: number) => void
 }
 
 export interface ReplaySource extends DataSource {
   /**
    * Move the replay cursor to `timeMs` and emit the latest frame at or
-   * before that time (dedup happens in WorldClient via revisions).
+   * before that time (dedup happens in WorldClient via revisions; a seek
+   * notifies `onSeek` so the timeline epoch resets and backward seek
+   * delivers correctly — Issue #11).
    */
   seek(timeMs: number): void
+  /** Register/replace the seek notification hook (used by foundation wiring). */
+  setOnSeek(cb: (timeMs: number) => void): void
   readonly range: { start: number; end: number }
 }
 
@@ -25,6 +35,7 @@ export function createReplaySource(options: ReplaySourceOptions): ReplaySource {
   const sorted = [...options.frames].sort((a, b) => a.timeMs - b.timeMs)
   const subscriptions = new Set<{ query: DataQuery; cb: (e: DataEnvelope) => void }>()
   let lastEmittedFrameIndex = -1
+  let seekHook: ((timeMs: number) => void) | undefined = options.onSeek
 
   function matches(e: DataEnvelope, q: DataQuery): boolean {
     if (e.contract !== q.contract) return false
@@ -79,7 +90,12 @@ export function createReplaySource(options: ReplaySourceOptions): ReplaySource {
         if (options.loop) index = sorted.length - 1
         else return
       }
+      // Issue #11：即使 frame 未变化也通知 epoch——主动 seek/rewind 是排序权威
+      seekHook?.(timeMs)
       if (index !== lastEmittedFrameIndex) emitFrame(index)
+    },
+    setOnSeek(cb) {
+      seekHook = cb
     },
     dispose() {
       subscriptions.clear()

@@ -29,7 +29,7 @@
 | `contract` | Domain 契约 ID（`<域>.<实体>.state@<版本>`），Foundation 不理解其语义 |
 | `key` | 会话内稳定，格式 `namespace/id`（如 `ais/MMSI`、`production/CRANE-003`） |
 | `sourceTime` | 服务器 epoch 毫秒；质量判定与历史对齐的基准 |
-| `revision` | **同一 key 单调递增**；客户端丢弃 `revision <= 缓存值` 的信封 |
+| `revision` | **同一 key、同一 LIVE transport 内单调递增**；客户端丢弃 `revision <= 缓存值` 的信封。排序域仅限当前连接/时间线（见 §5.1） |
 | `quality` | `good` / `stale` / `bad` / `unknown`；客户端亦会按本地陈旧窗口降级为 `stale` |
 
 `payload` 语义由 Domain 契约定义（如 `twin.vessel.state@1`），平台透传。
@@ -81,7 +81,20 @@
   `[{ "timeMs": …, "envelopes": [DataEnvelope…] }]` 帧数组。
 
 客户端统一经 `createReplaySource({ frames })` 包装为 history 源；
-`seek(timeMs)` 定位到「≤ t 的最近一帧」，循环与边界由 WorldClient 的 revision 去重兜底。
+`seek(timeMs)` 定位到「≤ t 的最近一帧」。
+
+### 7.1 revision 排序域与 timeline rewind（Issue #11）
+
+`revision` 的单调性只在**同一 LIVE transport 连接内**作为乱序/重放去重的排序域：
+
+- **LIVE**：revision 是 transport ordering authority。重连后旧快照（较低 revision）不得覆盖更新数据；mode 往返（LIVE→HISTORY→LIVE）后 LIVE 游标保留。
+- **HISTORY / SIMULATION**：world timeline（`seek(timeMs)` / scrubber）是排序权威。主动 rewind 后**较低的 revision 恰恰是用户选择的更早正确世界状态**，不得被当作 stale packet 丢弃。
+
+因此客户端（WorldClient）在每次 HISTORY `seek` 时开启新的 timeline epoch
+（`DataApi.beginTimelineEpoch('history')`），重置该模式的 revision 游标；
+mode 切换本身也产生新的 mode generation，旧模式的异步 snapshot 整批丢弃。
+服务端如未来提供真实历史 API，只需保持"seek 后按时间线正确重放"语义，
+无需为 rewind 修改 revision 规则。
  Portal 在世界模式切换到 HISTORY 时以 world clock 驱动 `seek`。
 
 ## 8. 仿真（Simulation）

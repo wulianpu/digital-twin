@@ -36,6 +36,13 @@ export interface DataApi {
   /** Current world mode routing. */
   readonly mode: WorldMode
   setMode(mode: WorldMode): void
+  /**
+   * 开启一个新的时间线 epoch（Issue #11）：HISTORY/SIMULATION 的主动 seek /
+   * rewind 是当前模式的排序权威——调用后该模式的 revision 游标与缓存被重置，
+   * 较低的 revision 视为"用户选择的更早正确世界状态"而非网络旧包。
+   * LIVE 的 transport 乱序去重不受影响。
+   */
+  beginTimelineEpoch(mode?: WorldMode): void
   dispose(): void
 }
 
@@ -47,21 +54,30 @@ interface ActiveSubscription {
   staleAfterMs: number
   sourceDisposables: Map<WorldMode, Disposable>
   /**
-   * 按订阅记录的已投递 revision（key → revision）。去重是**每订阅**语义：
-   * 同一契约的多个订阅者必须各自收到全部新信封，全局缓存去重会吞掉
-   * 第二个订阅者的投递（I7 修复的多订阅缺陷）。
+   * 按 {mode → key → revision} 分区的已投递游标（Issue #11）：
+   * - 去重是**每订阅、每模式**语义：同一契约的多个订阅者必须各自收到全部
+   *   新信封；不同 world mode 是不同时间线，revision 互不可比。
+   * - LIVE：revision 是 transport ordering authority（重连旧快照仍被去重）。
+   * - HISTORY/SIMULATION：timeline epoch 重置游标（beginTimelineEpoch），
+   *   主动 rewind 后较低 revision 必须能成为当前状态。
    */
-  delivered: Map<string, number>
+  delivered: Map<WorldMode, Map<string, number>>
 }
 
 /**
  * WorldClient: Query / Snapshot / Delta / Subscription / State cache with
  * mode routing and revision dedup (§34, §36). Scenes never see transports.
+ *
+ * Issue #11：revision 单调性只描述"同一 LIVE transport 内的乱序去重"；
+ * world mode 切换与 HISTORY/SIM 时间线 rewind 由显式的
+ * modeGeneration / timeline epoch 管理，三者不可混用同一游标。
  */
 export class WorldClient implements DataApi {
-  private _mode: WorldMode = 'live'
   private readonly sources = new Map<WorldMode, DataSource>()
-  private readonly cache = new Map<DataContractIdString, Map<string, DataEnvelope>>()
+  private _mode: WorldMode = 'live'
+  private modeGeneration = 0
+  /** mode → (contract → key → envelope)：cache 按模式分区，互不串真值。 */
+  private readonly cache = new Map<WorldMode, Map<DataContractIdString, Map<string, DataEnvelope>>>()
   private readonly active = new Set<ActiveSubscription>()
   private sweepTimer: ReturnType<typeof setInterval> | undefined
   private disposed = false
@@ -87,6 +103,13 @@ export class WorldClient implements DataApi {
   setMode(mode: WorldMode): void {
     if (mode === this._mode || this.disposed) return
     this._mode = mode
+    // #11-A：mode switch 产生新的 source generation。旧 generation 的异步
+    // snapshot 晚到后必须整批丢弃（不写 cache / 游标 / handler）。
+    this.modeGeneration++
+    // #11-B/C：进入 HISTORY/SIMULATION = 新时间线——重置该模式的游标与缓存，
+    // 防止上次访问遗留的旧时间线值被当作当前 truth。LIVE 是 transport
+    // ordering authority：游标与缓存跨模式往返保留，重连旧快照仍被去重。
+    if (mode !== 'live') this.resetModeState(mode)
     // Re-route active subscriptions; replay a snapshot so consumers receive
     // an immediate delta for the new mode.
     for (const sub of this.active) {
@@ -96,12 +119,27 @@ export class WorldClient implements DataApi {
     }
   }
 
+  beginTimelineEpoch(mode: WorldMode = this._mode): void {
+    if (this.disposed) return
+    // #11-B：HISTORY/SIMULATION 主动 rewind → 该模式时间线 epoch 重启。
+    // 仅清游标（保留 cache，等待正确的历史值覆盖），LIVE 不受影响。
+    if (mode === this._mode) {
+      for (const sub of this.active) sub.delivered.get(mode)?.clear()
+    }
+  }
+
   async query(query: DataQuery): Promise<readonly DataEnvelope[]> {
-    const source = this.sources.get(this._mode)
+    const mode = this._mode
+    const generation = this.modeGeneration
+    const source = this.sources.get(mode)
     if (!source) return []
     const envelopes = await source.snapshot(query)
-    for (const e of envelopes) {
-      if (this.matches(e, query)) this.putCache(e)
+    // #11-A：query 也是异步——mode/generation 已变时结果属于旧时间线，
+    // 只返回给调用方，不再写入当前模式 cache 污染 truth。
+    if (this.modeGeneration === generation && this._mode === mode && !this.disposed) {
+      for (const e of envelopes) {
+        if (this.matches(e, query)) this.putCache(e)
+      }
     }
     return envelopes
   }
@@ -138,18 +176,19 @@ export class WorldClient implements DataApi {
   }
 
   peek(contract: DataContractIdString, key: string): DataEnvelope | undefined {
-    return this.cache.get(contract)?.get(key)
+    return this.cache.get(this._mode)?.get(contract)?.get(key)
   }
 
   /**
    * 全局实体搜索（B2）：在缓存键中做大小写不敏感子串匹配。
-   * 只搜键（Foundation 不理解 payload 语义，§33）。
+   * 只搜键（Foundation 不理解 payload 语义，§33）；
+   * #11：只搜当前 mode 的 cache 分区。
    */
   search(term: string, limit = 8): Array<{ contract: DataContractIdString; key: string }> {
     const q = term.trim().toLowerCase()
     if (!q) return []
     const out: Array<{ contract: DataContractIdString; key: string }> = []
-    for (const [contract, byKey] of this.cache) {
+    for (const [contract, byKey] of this.cache.get(this._mode) ?? []) {
       for (const key of byKey.keys()) {
         if (key.toLowerCase().includes(q)) {
           out.push({ contract, key })
@@ -160,10 +199,10 @@ export class WorldClient implements DataApi {
     return out
   }
 
-  /** 缓存中质量为 stale 的信封数量（I3-3：降级可见）。 */
+  /** 缓存中质量为 stale 的信封数量（I3-3：降级可见；仅当前 mode 分区）。 */
   countStale(): number {
     let count = 0
-    for (const byKey of this.cache.values()) {
+    for (const byKey of this.cache.get(this._mode)?.values() ?? []) {
       for (const envelope of byKey.values()) {
         if (envelope.quality === 'stale') count++
       }
@@ -182,15 +221,19 @@ export class WorldClient implements DataApi {
   }
 
   private attachToSource(sub: ActiveSubscription): void {
-    const source = this.sources.get(this._mode)
+    const mode = this._mode
+    const source = this.sources.get(mode)
     if (!source) return
     const forward: EnvelopeHandler = (e) => {
+      // #11-A：setMode 会 detach 旧 source，但已入队的转发回调仍可能晚到——
+      // 非当前模式的事件一律丢弃。
+      if (this._mode !== mode || this.disposed) return
       const effective = this.ingest(e, sub)
       if (effective) {
         for (const handler of sub.handlers) handler(effective)
       }
     }
-    sub.sourceDisposables.set(this._mode, source.subscribe(sub.query, forward))
+    sub.sourceDisposables.set(mode, source.subscribe(sub.query, forward))
   }
 
   private detachFromSources(sub: ActiveSubscription): void {
@@ -199,11 +242,17 @@ export class WorldClient implements DataApi {
   }
 
   private async replaySnapshot(sub: ActiveSubscription): Promise<void> {
-    const source = this.sources.get(this._mode)
+    // #11-A：捕获 mode + generation——异步 snapshot 晚到时若世界已切换
+    // 模式/时间线，整批丢弃（不写 cache / 游标 / handler）。
+    const mode = this._mode
+    const generation = this.modeGeneration
+    const source = this.sources.get(mode)
     if (!source) return
     try {
       const envelopes = await source.snapshot(sub.query)
-      if (this.disposed) return
+      if (this.disposed || this._mode !== mode || this.modeGeneration !== generation) {
+        return
+      }
       for (const e of envelopes) {
         const effective = this.ingest(e, sub)
         if (effective) {
@@ -216,21 +265,23 @@ export class WorldClient implements DataApi {
   }
 
   /**
-   * Cache write + per-subscription dedup + staleness evaluation.
+   * Cache write + per-subscription/per-mode dedup + staleness evaluation.
    * Returns the envelope to deliver to THIS subscription, or undefined when
    * it is a duplicate the subscriber has already seen.
    */
   private ingest(e: DataEnvelope, sub: ActiveSubscription): DataEnvelope | undefined {
     if (!this.matches(e, sub.query)) return undefined
-    const last = sub.delivered.get(e.key)
-    if (
-      last !== undefined &&
-      e.revision !== undefined &&
-      e.revision <= last
-    ) {
+    const mode = this._mode
+    let cursor = sub.delivered.get(mode)
+    if (!cursor) {
+      cursor = new Map()
+      sub.delivered.set(mode, cursor)
+    }
+    const last = cursor.get(e.key)
+    if (last !== undefined && e.revision !== undefined && e.revision <= last) {
       return undefined
     }
-    if (e.revision !== undefined) sub.delivered.set(e.key, e.revision)
+    if (e.revision !== undefined) cursor.set(e.key, e.revision)
     const effective =
       sub.staleAfterMs !== Number.POSITIVE_INFINITY &&
       e.sourceTime + sub.staleAfterMs < this.now() &&
@@ -247,23 +298,34 @@ export class WorldClient implements DataApi {
     return true
   }
 
-  /** Cache write for query results (no subscription staleness window). */
+  /** Cache write（写入当前 mode 分区）for query results and ingested envelopes. */
   private putCache(e: DataEnvelope): void {
-    let byKey = this.cache.get(e.contract)
+    let byContract = this.cache.get(this._mode)
+    if (!byContract) {
+      byContract = new Map()
+      this.cache.set(this._mode, byContract)
+    }
+    let byKey = byContract.get(e.contract)
     if (!byKey) {
       byKey = new Map()
-      this.cache.set(e.contract, byKey)
+      byContract.set(e.contract, byKey)
     }
     byKey.set(e.key, e)
+  }
+
+  /** 重置某模式的 timeline 状态：revision 游标 + 该模式缓存分区。 */
+  private resetModeState(mode: WorldMode): void {
+    for (const sub of this.active) sub.delivered.get(mode)?.clear()
+    this.cache.delete(mode)
   }
 
   private sweepStale(): void {
     const now = this.now()
     const window = this.options.defaultStaleAfterMs ?? 60_000
-    for (const byKey of this.cache.values()) {
-      for (const [key, e] of byKey) {
+    for (const byContract of this.cache.get(this._mode)?.values() ?? []) {
+      for (const [key, e] of byContract) {
         if (e.quality === 'good' && now - e.sourceTime > window) {
-          byKey.set(key, { ...e, quality: 'stale' })
+          byContract.set(key, { ...e, quality: 'stale' })
         }
       }
     }

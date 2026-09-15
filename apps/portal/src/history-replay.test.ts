@@ -57,3 +57,57 @@ describe('HISTORY 回放推进（A1）', () => {
     }
   })
 })
+
+/** ---------------------- Issue #11：backward scrub + 长订阅 revision 隔离 */
+
+describe('HISTORY backward scrub（Issue #11）', () => {
+  afterEach(() => {
+    (globalThis as Record<string, unknown>).__twinPerfReport = undefined
+  })
+
+  it('已有长期订阅：切 HISTORY 到过去 → 状态变为过去值；向后 scrub → 状态再次向过去变化', async () => {
+    const foundation = buildFoundation()
+    try {
+      // 长期订阅：LIVE 阶段就建立（不是切 HISTORY 后新建），持续接收全部投递
+      const seen: Array<{ x: number; sourceTime: number }> = []
+      foundation.data.subscribe({ contract: AGV_CONTRACT }, (e) => {
+        const s = decodeAgv(e)
+        if (s) seen.push({ x: s.xMeters, sourceTime: e.sourceTime })
+      })
+
+      // LIVE 先积累高 revision 的真实数据
+      foundation.world.setMode('live')
+      foundation.data.setMode('live')
+      foundation.tick()
+      foundation.tick()
+      await new Promise((r) => setTimeout(r, 20))
+      const liveCount = seen.length
+      expect(liveCount).toBeGreaterThan(0)
+
+      // 切 HISTORY 到过去（录制区间 = 过去 20 分钟）
+      foundation.world.setMode('history')
+      foundation.data.setMode('history')
+      const historyStart = Date.now() - 20 * 60_000
+      foundation.world.clock.seek(historyStart + 120_000) // 区间 +2 分钟
+      foundation.tick()
+      await new Promise((r) => setTimeout(r, 30))
+
+      const afterForward = seen.length
+      expect(afterForward).toBeGreaterThan(liveCount) // 历史帧被投递（未被 revision 去重吞掉）
+
+      // scrub 向后：拖到更早时间（+30s < +120s）→ 较低 revision 必须再次投递
+      foundation.world.clock.seek(historyStart + 30_000)
+      foundation.tick()
+      await new Promise((r) => setTimeout(r, 30))
+
+      const afterBackward = seen.length
+      expect(afterBackward).toBeGreaterThan(afterForward)
+
+      // 且回退后看到的是更早的 sourceTime（世界时间与状态一致）
+      const recent = seen.slice(-(afterBackward - afterForward))
+      expect(recent.every((s) => s.sourceTime <= historyStart + 120_000)).toBe(true)
+    } finally {
+      foundation.dispose()
+    }
+  })
+})

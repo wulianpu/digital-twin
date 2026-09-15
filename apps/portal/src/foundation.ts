@@ -148,6 +148,11 @@ export function buildFoundation(
     now: () => world.time.now().epochMillis
   })
 
+  // Issue #11：HISTORY 主动 seek/rewind（含 scrubber 拖动）是排序权威——
+  // 每次 seek 开启新的 timeline epoch，WorldClient 重置 revision 游标，
+  // 较低 revision 的历史帧不会被误判为网络旧包。
+  historySource.setOnSeek(() => data.beginTimelineEpoch('history'))
+
   // B2：业务名称搜索提供者（演示网关注册船名索引；生产由数据层注册）。
   const searchProviders: Array<(term: string) => Array<{ key: string; label: string }>> = [
     (term) => gateway.searchVesselsByName(term)

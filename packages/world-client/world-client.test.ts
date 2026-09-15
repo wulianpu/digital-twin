@@ -271,3 +271,175 @@ describe('WebSocket source (transport contract)', () => {
     source.close()
   })
 })
+
+/** -------------------------- Issue #11：mode/timeline generation 隔离 */
+
+describe('WorldClient mode/timeline isolation（Issue #11）', () => {
+  function setup() {
+    const live = createScriptedSource({ kind: 'live' })
+    const history = createScriptedSource({ kind: 'history' })
+    const simulation = createScriptedSource({ kind: 'simulation' })
+    const client = new WorldClient({
+      sources: [live, history, simulation],
+      sweepIntervalMs: 0
+    })
+    return { live, history, simulation, client }
+  }
+
+  it('LIVE 高 revision 后切 HISTORY：较低历史 revision 必须投递并成为当前 truth', () => {
+    const { live, history, client } = setup()
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    live.emit([envelope({ revision: 1200, payload: { t: 'live' } })])
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 'live' })
+
+    client.setMode('history')
+    history.emit([envelope({ revision: 600, payload: { t: 'history-600' } })])
+
+    expect(cb).toHaveBeenLastCalledWith(
+      expect.objectContaining({ payload: { t: 'history-600' } })
+    )
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 'history-600' })
+    client.dispose()
+  })
+
+  it('HISTORY 内 backward seek：较低 revision 仍投递（timeline rewind 语义）', () => {
+    const frames = [
+      {
+        timeMs: now,
+        envelopes: [envelope({ revision: 50, payload: { t: 't1' } })]
+      },
+      {
+        timeMs: now + 60_000,
+        envelopes: [envelope({ revision: 80, payload: { t: 't2' } })]
+      }
+    ]
+    const history = createReplaySource({ frames })
+    const client = new WorldClient({ sources: [history], sweepIntervalMs: 0 })
+    client.setMode('history')
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    history.setOnSeek(() => client.beginTimelineEpoch('history'))
+
+    history.seek(now + 60_000) // t2, rev=80
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 't2' })
+
+    history.seek(now) // rewind → t1, rev=50（低 revision 必须覆盖）
+    expect(cb).toHaveBeenLastCalledWith(
+      expect.objectContaining({ payload: { t: 't1' } })
+    )
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 't1' })
+    client.dispose()
+  })
+
+  it('stale snapshot race：deferred snapshot 晚到不得写 cache / 触发 handler', async () => {
+    let releaseHistory!: () => void
+    const gate = new Promise<void>((r) => {
+      releaseHistory = r
+    })
+    const history = createScriptedSource({ kind: 'history' })
+    history.snapshot = () => gate.then(() => [
+      envelope({ revision: 10, payload: { t: 'late-history' } })
+    ])
+    const simulation = createScriptedSource({ kind: 'simulation' })
+    const client = new WorldClient({
+      sources: [history, simulation],
+      sweepIntervalMs: 0
+    })
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+
+    client.setMode('history') // history snapshot pending
+    const cbSim = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cbSim)
+    simulation.emit([envelope({ revision: 900, payload: { t: 'sim' } })])
+    // setMode('simulation') 会为新的 long-lived 订阅触发 simulation snapshot——
+    // 为隔离竞态，直接校验：history snapshot 晚到后不得污染当前 simulation truth
+    client.setMode('simulation')
+    simulation.emit([envelope({ revision: 901, payload: { t: 'sim-901' } })])
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 'sim-901' })
+
+    releaseHistory()
+    await Promise.resolve()
+    await Promise.resolve()
+    await new Promise((r) => setTimeout(r, 0))
+
+    // 旧模式（history gen）的晚到 snapshot 被整批丢弃
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 'sim-901' })
+    expect(cb).not.toHaveBeenLastCalledWith(
+      expect.objectContaining({ payload: { t: 'late-history' } })
+    )
+    client.dispose()
+  })
+
+  it('rapid live → history → simulation：last-mode-wins，只有 simulation 可 commit', async () => {
+    const histories: Array<Promise<readonly DataEnvelope[]>> = []
+    const history = createScriptedSource({ kind: 'history' })
+    history.snapshot = () => {
+      const p = Promise.resolve<readonly DataEnvelope[]>([
+        envelope({ revision: 5, payload: { t: 'history-snap' } })
+      ])
+      histories.push(p)
+      return p
+    }
+    const live = createScriptedSource({ kind: 'live' })
+    const simulation = createScriptedSource({ kind: 'simulation' })
+    const client = new WorldClient({
+      sources: [live, history, simulation],
+      sweepIntervalMs: 0
+    })
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+
+    client.setMode('history')
+    client.setMode('simulation')
+    simulation.emit([envelope({ revision: 900, payload: { t: 'sim' } })])
+    await Promise.all(histories)
+    await Promise.resolve()
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(client.mode).toBe('simulation')
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 'sim' })
+    const historyDels = cb.mock.calls.filter(
+      ([e]) => (e as DataEnvelope).payload && (e as DataEnvelope).payload !== null && (e as DataEnvelope & { payload: { t?: string } }).payload.t === 'history-snap'
+    )
+    expect(historyDels).toHaveLength(0)
+    client.dispose()
+  })
+
+  it('switch back：LIVE 高 revision → HISTORY 旧 revision → LIVE 最新 revision 全程正确', () => {
+    const { live, history, client } = setup()
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    live.emit([envelope({ revision: 1200, payload: { t: 'live-1200' } })])
+    client.setMode('history')
+    history.emit([envelope({ revision: 300, payload: { t: 'history-300' } })])
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 'history-300' })
+
+    client.setMode('live')
+    // LIVE 游标与分区保留：重连旧快照 rev=1100 仍被去重，当前 truth 仍是
+    // LIVE 最后已知状态（分区语义：各模式只暴露自己的 truth）
+    live.emit([envelope({ revision: 1100, payload: { t: 'live-old-replay' } })])
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 'live-1200' })
+    live.emit([envelope({ revision: 1300, payload: { t: 'live-1300' } })])
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 'live-1300' })
+    expect(client.mode).toBe('live')
+    client.dispose()
+  })
+
+  it('peek 不串模式：LIVE 写入的值在切 HISTORY 后不可见（缓存分区）', () => {
+    const { live, history, client } = setup()
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    live.emit([envelope({ payload: { t: 'live-only' } })])
+    expect(client.peek('twin.test@1', 'e/1')).toBeDefined()
+
+    client.setMode('history')
+    expect(client.peek('twin.test@1', 'e/1')).toBeUndefined() // 分区隔离
+    history.emit([envelope({ payload: { t: 'history-now' } })])
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 'history-now' })
+    client.setMode('live')
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 'live-only' })
+    client.dispose()
+  })
+})
