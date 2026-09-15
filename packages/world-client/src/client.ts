@@ -76,6 +76,13 @@ export class WorldClient implements DataApi {
   private readonly sources = new Map<WorldMode, DataSource>()
   private _mode: WorldMode = 'live'
   private modeGeneration = 0
+  /**
+   * #11-r2：timeline epoch 是**异步 commit authority**——每次
+   * beginTimelineEpoch(mode) 递增；所有可能写当前 truth 的 async
+   * continuation（replaySnapshot/query/source forward）必须校验
+   * {mode, modeGeneration, timelineGeneration} 完整 identity。
+   */
+  private readonly timelineGeneration = new Map<WorldMode, number>()
   /** mode → (contract → key → envelope)：cache 按模式分区，互不串真值。 */
   private readonly cache = new Map<WorldMode, Map<DataContractIdString, Map<string, DataEnvelope>>>()
   private readonly active = new Set<ActiveSubscription>()
@@ -121,22 +128,41 @@ export class WorldClient implements DataApi {
 
   beginTimelineEpoch(mode: WorldMode = this._mode): void {
     if (this.disposed) return
-    // #11-B：HISTORY/SIMULATION 主动 rewind → 该模式时间线 epoch 重启。
-    // 仅清游标（保留 cache，等待正确的历史值覆盖），LIVE 不受影响。
+    // #11-r2：epoch identity 递增——使 seek 前启动的 async continuation
+    // （replaySnapshot/query/已入队 source 事件）全部失去 commit authority。
+    this.timelineGeneration.set(mode, (this.timelineGeneration.get(mode) ?? 0) + 1)
     if (mode === this._mode) {
+      // 游标重置：低 revision 的正确历史值可成为当前状态
       for (const sub of this.active) sub.delivered.get(mode)?.clear()
+      // 重新 attach：新的 forward 闭包捕获新 epoch——旧闭包（seek 前挂起/
+      // 已入队的事件）持有旧 epoch identity，会被 forward guard 丢弃；
+      // seek 之后 source 发出的新帧属于新 epoch，正常投递。
+      for (const sub of this.active) {
+        this.detachFromSources(sub)
+        this.attachToSource(sub)
+      }
     }
+  }
+
+  private currentTimelineGen(mode: WorldMode): number {
+    return this.timelineGeneration.get(mode) ?? 0
   }
 
   async query(query: DataQuery): Promise<readonly DataEnvelope[]> {
     const mode = this._mode
     const generation = this.modeGeneration
+    const timeline = this.currentTimelineGen(mode)
     const source = this.sources.get(mode)
     if (!source) return []
     const envelopes = await source.snapshot(query)
-    // #11-A：query 也是异步——mode/generation 已变时结果属于旧时间线，
-    // 只返回给调用方，不再写入当前模式 cache 污染 truth。
-    if (this.modeGeneration === generation && this._mode === mode && !this.disposed) {
+    // #11-A/r2：query 也是异步——mode/generation/timeline 已变时结果属于
+    // 旧时间线，只返回给调用方，不再写入当前模式 cache 污染 truth。
+    if (
+      !this.disposed &&
+      this._mode === mode &&
+      this.modeGeneration === generation &&
+      this.currentTimelineGen(mode) === timeline
+    ) {
       for (const e of envelopes) {
         if (this.matches(e, query)) this.putCache(e)
       }
@@ -222,12 +248,15 @@ export class WorldClient implements DataApi {
 
   private attachToSource(sub: ActiveSubscription): void {
     const mode = this._mode
+    const timeline = this.currentTimelineGen(mode)
     const source = this.sources.get(mode)
     if (!source) return
     const forward: EnvelopeHandler = (e) => {
-      // #11-A：setMode 会 detach 旧 source，但已入队的转发回调仍可能晚到——
-      // 非当前模式的事件一律丢弃。
-      if (this._mode !== mode || this.disposed) return
+      // #11-A/r2：setMode 会 detach 旧 source，但已入队的转发回调仍可能晚到；
+      // 同 mode 的旧 timeline epoch 事件（seek 前入队）同样丢弃——
+      // 否则旧 epoch 高 revision 会抢占游标、反过来吞掉新 epoch 低 revision。
+      if (this.disposed || this._mode !== mode) return
+      if (this.currentTimelineGen(mode) !== timeline) return
       const effective = this.ingest(e, sub)
       if (effective) {
         for (const handler of sub.handlers) handler(effective)
@@ -242,15 +271,22 @@ export class WorldClient implements DataApi {
   }
 
   private async replaySnapshot(sub: ActiveSubscription): Promise<void> {
-    // #11-A：捕获 mode + generation——异步 snapshot 晚到时若世界已切换
-    // 模式/时间线，整批丢弃（不写 cache / 游标 / handler）。
+    // #11-A/r2：捕获 {mode, modeGeneration, timelineGeneration} 完整 identity——
+    // 异步 snapshot 晚到时若世界已切换模式或同一模式内 seek/rewind 开启了
+    // 新 epoch，整批丢弃（不写 cache / 游标 / handler）。
     const mode = this._mode
     const generation = this.modeGeneration
+    const timeline = this.currentTimelineGen(mode)
     const source = this.sources.get(mode)
     if (!source) return
     try {
       const envelopes = await source.snapshot(sub.query)
-      if (this.disposed || this._mode !== mode || this.modeGeneration !== generation) {
+      if (
+        this.disposed ||
+        this._mode !== mode ||
+        this.modeGeneration !== generation ||
+        this.currentTimelineGen(mode) !== timeline
+      ) {
         return
       }
       for (const e of envelopes) {
@@ -313,8 +349,9 @@ export class WorldClient implements DataApi {
     byKey.set(e.key, e)
   }
 
-  /** 重置某模式的 timeline 状态：revision 游标 + 该模式缓存分区。 */
+  /** 重置某模式的 timeline 状态：epoch 递增 + 游标 + 该模式缓存分区。 */
   private resetModeState(mode: WorldMode): void {
+    this.timelineGeneration.set(mode, (this.timelineGeneration.get(mode) ?? 0) + 1)
     for (const sub of this.active) sub.delivered.get(mode)?.clear()
     this.cache.delete(mode)
   }

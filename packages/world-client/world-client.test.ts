@@ -443,3 +443,86 @@ describe('WorldClient mode/timeline isolation（Issue #11）', () => {
     client.dispose()
   })
 })
+
+/** ------------- Issue #11-r2：timeline epoch 作为异步 commit authority */
+
+describe('timeline epoch commit authority（Issue #11-r2）', () => {
+  function setupHistoryClient() {
+    const history = createScriptedSource({ kind: 'history' })
+    const client = new WorldClient({ sources: [history], sweepIntervalMs: 0 })
+    client.setMode('history')
+    return { history, client }
+  }
+
+  it('seek 前启动的 snapshot 晚到：不得把未来 t2 写回已 scrub 到的 t1', async () => {
+    const { history, client } = setupHistoryClient()
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+
+    // 旧 epoch：t2 的 snapshot 挂起（deferred）
+    let releaseOld!: () => void
+    const oldGate = new Promise<readonly DataEnvelope[]>((r) => {
+      releaseOld = () => r([envelope({ revision: 80, payload: { t: 't2-future' } })])
+    })
+    history.snapshot = () => oldGate
+
+    // 用户 scrub 向后 → 新 epoch（t1, rev=50）
+    client.beginTimelineEpoch('history')
+    history.emit([envelope({ revision: 50, payload: { t: 't1-correct' } })])
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 't1-correct' })
+
+    // 旧 epoch snapshot 晚到 → 必须整批丢弃，不得把 t2 写回
+    releaseOld()
+    await Promise.resolve()
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 't1-correct' })
+    client.dispose()
+  })
+
+  it('cursor 重置后旧 epoch 高 revision 事件抢先到达：不得抢占游标吞掉新 epoch 低 revision', () => {
+    const { history, client } = setupHistoryClient()
+    const cb = vi.fn()
+    const forwardSink: Array<(e: DataEnvelope) => void> = []
+    history.subscribe = (_q, cb2) => {
+      forwardSink.push(cb2)
+      return { dispose: () => {} }
+    }
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    client.beginTimelineEpoch('history') // epoch++（t1 新时间线）
+    expect(forwardSink.length).toBeGreaterThan(0)
+
+    // 旧 epoch 的迟到事件（seek 前已入队，rev=80）
+    forwardSink[0]!(envelope({ revision: 80, payload: { t: 'old-epoch' } }))
+    // 旧 epoch 事件被 forward guard 丢弃 → 游标未被抢占
+    expect(client.peek('twin.test@1', 'e/1')).toBeUndefined()
+
+    // 新 epoch 正确的低 revision t1（经新 epoch 的 forward 通道）不被吞掉
+    forwardSink[1]!(envelope({ revision: 50, payload: { t: 't1-correct' } }))
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 't1-correct' })
+    client.dispose()
+  })
+
+  it('query 晚到 resolve：seek 后旧查询不再污染当前 cache', async () => {
+    const { history, client } = setupHistoryClient()
+    client.subscribe({ contract: 'twin.test@1' }, () => {})
+
+    let releaseQuery!: () => void
+    const gate = new Promise<readonly DataEnvelope[]>((r) => {
+      releaseQuery = () =>
+        r([envelope({ revision: 80, payload: { t: 'query-t2' } })])
+    })
+    history.snapshot = () => gate
+    const p = client.query({ contract: 'twin.test@1' }) // t2 时代发起
+
+    // seek 回 t1（epoch++）
+    client.beginTimelineEpoch('history')
+    history.emit([envelope({ revision: 50, payload: { t: 't1-correct' } })])
+    releaseQuery()
+    await p
+
+    // 旧时间线的 query 结果不得污染当前 cache
+    expect(client.peek('twin.test@1', 'e/1')?.payload).toEqual({ t: 't1-correct' })
+    client.dispose()
+  })
+})

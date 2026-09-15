@@ -510,3 +510,16 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   pending load late resolve 不产生 Host mutation、pending mount 被 Host 终态
   拒绝、close/shutdown 幂等共享、close 后 select/preload 无副作用）。
   验证：pnpm verify 全绿、265/265 单测、compliance 40/40、e2e 10/10。
+
+- 2026-09-16 **Issue #11 二次复审修复（P1：timeline epoch 成为异步 commit authority）**：
+  ①新增 `timelineGeneration[mode]`——beginTimelineEpoch 与 setMode 进入
+  HISTORY/SIMULATION 时递增，epoch 成为独立的异步提交身份（不再只是清游标）；
+  ②replaySnapshot / query / attachToSource forward 三处全部校验完整 identity
+  {mode, modeGeneration, timelineGeneration}——seek 前启动的 snapshot/query
+  晚到后不得写 cache / 游标 / handler；seek 前已入队的 source 事件
+  （旧 epoch 高 revision）被 forward guard 丢弃，不得抢占游标反过来吞掉
+  新 epoch 低 revision；
+  ③beginTimelineEpoch 同时重 attach（新 forward 捕获新 epoch）+ 清游标——
+  seek 之后 source 发出的新帧属于新 epoch 正常投递；
+  ④deferred 竞态测试 +3（旧 snapshot 回写 t2 / 旧 epoch 抢占游标 / query 污染）。
+  验证：pnpm verify 全绿、268/268 单测、compliance 40/40、e2e 10/10。
