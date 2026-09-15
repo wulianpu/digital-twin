@@ -70,9 +70,11 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
   if (options.initialMode) clock.setMode(options.initialMode)
 
   const sites = new Map<SiteId, Site>()
-  for (const site of options.sites ?? []) sites.set(site.id, site)
+  // Issue #6：Foundation owns facts——初始 sites 同样防御性拷贝
+  for (const site of options.sites ?? []) sites.set(site.id, snapshotSite(site))
 
-  let scope: WorldScope = options.initialScope ?? { kind: 'global' }
+  // Issue #6：write-side alias 防线——内部 truth 不持有调用方可变引用
+  let scope: WorldScope = snapshotScope(options.initialScope ?? { kind: 'global' })
   let mode: WorldMode = options.initialMode ?? 'live'
 
   const siteListeners = new Set<() => void>()
@@ -117,11 +119,13 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
       return undefined
     },
     register(site) {
-      sites.set(site.id, site)
+      // Issue #6：registry 存防御性副本——调用方后续修改 origin/bounds 不影响 truth
+      const stored = snapshotSite(site)
+      sites.set(stored.id, stored)
       for (const cb of siteListeners) cb()
       return {
         dispose: () => {
-          sites.delete(site.id)
+          sites.delete(stored.id)
           for (const cb of siteListeners) cb()
         }
       }
@@ -158,7 +162,9 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
       emitSession()
     },
     setScope(next) {
-      scope = next
+      // Issue #6：入参立即 snapshot——调用方（含已卸载 Scene 的历史闭包）
+      // 之后修改原对象不得反向污染 World truth
+      scope = snapshotScope(next)
       emitSession()
     },
     onSessionChanged(cb) {

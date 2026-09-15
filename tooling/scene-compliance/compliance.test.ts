@@ -232,6 +232,42 @@ describe('Hostile scene compliance: alias 旁路与 create-before-guard（Issue 
   }, 15_000)
 })
 
+describe('Hostile scene compliance: write-side input alias（Issue #6）', () => {
+  const INPUT_ALIAS_FIXTURES: Array<{ id: string; key: string; load: () => Promise<unknown> }> = [
+    {
+      id: 'hostile:zombie-world-scope-input-alias',
+      key: 'world-scope-input-alias',
+      load: () => import('./fixtures/hostile-scenes').then(m => m.zombieWorldScopeInputAlias)
+    },
+    {
+      id: 'hostile:zombie-selection-primary-input-alias',
+      key: 'selection-primary-input-alias',
+      load: () => import('./fixtures/hostile-scenes').then(m => m.zombieSelectionPrimaryInputAlias)
+    },
+    {
+      id: 'hostile:zombie-selection-secondary-input-alias',
+      key: 'selection-secondary-input-alias',
+      load: () => import('./fixtures/hostile-scenes').then(m => m.zombieSelectionSecondaryInputAlias)
+    },
+    {
+      id: 'hostile:zombie-selection-toggle-input-alias',
+      key: 'selection-toggle-input-alias',
+      load: () => import('./fixtures/hostile-scenes').then(m => m.zombieSelectionToggleInputAlias)
+    }
+  ]
+
+  it.each(INPUT_ALIAS_FIXTURES.map(f => [f.id, f.key, f.load] as const))(
+    '%s: 卸载后修改 setter 原入参不影响 Foundation truth',
+    async (sceneId, key, load) => {
+      const report = await runComplianceCycles(sceneId, load, { cycles: 2, framesPerCycle: 5 })
+      expect(report.errors).toEqual([])
+      expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
+      expect(zombieWriteProbes[key]).toBe('SAFE')
+    },
+    15_000
+  )
+})
+
 describe('Gate #2: production 2D ↔ 3D toggle ×100', () => {
   it('toggles 100 times with the scene mounted once', async () => {
     const result = await runToggleStress('production', () => import('@twin/scene-production'), 100)

@@ -339,3 +339,81 @@ export const zombieSiteRegisterAfterClose: SceneEntry = {
     }
   }
 }
+
+/** ---------------------------------------------------- Issue #6（write-side alias） */
+
+/** setScope 入参别名：卸载后修改原 scope 对象不得反向污染 World truth */
+export const zombieWorldScopeInputAlias: SceneEntry = {
+  async mount(ctx) {
+    const world = ctx.world
+    const retained: {
+      kind: 'entity'
+      entity: { namespace: string; id: string }
+    } = { kind: 'entity', entity: { namespace: 'vessel', id: 'keep' } }
+    let sessionEvents = 0
+    world.setScope(retained)
+    world.onSessionChanged(() => sessionEvents++)
+    return {
+      unmount() {
+        // 已卸载 Scene 的历史闭包直接改原入参对象
+        retained.entity.id = 'ZOMBIE'
+        const scope = world.session.scope
+        const intact = scope.kind === 'entity' && scope.entity.id === 'keep'
+        // alias mutation 不得触发任何 session 事件
+        zombieWriteProbes['world-scope-input-alias'] =
+          intact && sessionEvents === 0 ? 'SAFE' : 'POLLUTED'
+      }
+    }
+  }
+}
+
+/** setPrimary 入参别名：卸载后修改原 EntityRef 不得改变 Selection truth */
+export const zombieSelectionPrimaryInputAlias: SceneEntry = {
+  async mount(ctx) {
+    const selection = ctx.selection
+    const retained = { namespace: 'vessel', id: 'keep' }
+    selection.setPrimary(retained)
+    return {
+      unmount() {
+        retained.id = 'ZOMBIE'
+        const primary = selection.current.primary
+        zombieWriteProbes['selection-primary-input-alias'] =
+          primary?.id === 'keep' ? 'SAFE' : 'POLLUTED'
+      }
+    }
+  }
+}
+
+/** setSecondary 入参别名：卸载后修改原数组元素不得改变 Selection truth */
+export const zombieSelectionSecondaryInputAlias: SceneEntry = {
+  async mount(ctx) {
+    const selection = ctx.selection
+    const retained = [{ namespace: 'agv', id: 'a1' }]
+    selection.setSecondary(retained)
+    return {
+      unmount() {
+        retained[0]!.id = 'ZOMBIE'
+        const secondary = selection.current.secondary
+        zombieWriteProbes['selection-secondary-input-alias'] =
+          secondary[0]?.id === 'a1' ? 'SAFE' : 'POLLUTED'
+      }
+    }
+  }
+}
+
+/** toggle 入参别名：卸载后修改原 EntityRef 不得改变 Selection truth */
+export const zombieSelectionToggleInputAlias: SceneEntry = {
+  async mount(ctx) {
+    const selection = ctx.selection
+    const retained = { namespace: 'crane', id: 'keep' }
+    selection.toggle(retained)
+    return {
+      unmount() {
+        retained.id = 'ZOMBIE'
+        const primary = selection.current.primary
+        zombieWriteProbes['selection-toggle-input-alias'] =
+          primary?.id === 'keep' ? 'SAFE' : 'POLLUTED'
+      }
+    }
+  }
+}

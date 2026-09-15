@@ -411,3 +411,105 @@ describe('Issue #5：nested capability / mutable alias / create-before-guard', (
     expect(frameEvents).toBe(0)
   })
 })
+
+describe('Issue #6：write-side input alias（setter 入参防御性拷贝）', () => {
+  function makeHostServices(
+    world: ReturnType<typeof createWorldApi>,
+    selection: ReturnType<typeof createSelectionApi>
+  ): SceneHostOptions['services'] {
+    return {
+      world,
+      spatial: createSpatialApi(),
+      data: { subscribe: () => ({ dispose: () => {} }) },
+      selection,
+      view: makeViewInner().view,
+      assets: {}
+    } as unknown as SceneHostOptions['services']
+  }
+
+  it('setScope 入参别名：卸载后修改原 scope/entity 不影响 World truth，且无事件', async () => {
+    const world = createWorldApi()
+    const host = new SceneHost({
+      viewport: { ui: document.createElement('div') },
+      services: makeHostServices(world, createSelectionApi())
+    })
+    const retained = { kind: 'entity' as const, entity: { namespace: 'vessel', id: 'keep' } }
+    let sessionEvents = 0
+    const mount = await host.mount({
+      mount: async (ctx) => {
+        ctx.world.setScope(retained)
+        ctx.world.onSessionChanged(() => sessionEvents++)
+        return { unmount: () => {} }
+      }
+    })
+    await mount.unmount()
+
+    retained.entity.id = 'ZOMBIE'
+    expect(world.session.scope).toEqual({
+      kind: 'entity',
+      entity: { namespace: 'vessel', id: 'keep' }
+    })
+    // alias mutation 不产生"状态已变但 listener 未通知"的静默
+    expect(sessionEvents).toBe(0)
+  })
+
+  it('setPrimary/setSecondary/toggle 入参别名：卸载后修改原对象不影响 Selection truth', async () => {
+    const selection = createSelectionApi()
+    const host = new SceneHost({
+      viewport: { ui: document.createElement('div') },
+      services: makeHostServices(createWorldApi(), selection)
+    })
+    const primary = { namespace: 'vessel', id: 'keep' }
+    const secondary = [{ namespace: 'agv', id: 'a1' }]
+    const toggled = { namespace: 'crane', id: 't1' }
+    const mount = await host.mount({
+      mount: async (ctx) => {
+        ctx.selection.setPrimary(primary)
+        ctx.selection.setSecondary(secondary)
+        ctx.selection.toggle(toggled)
+        return { unmount: () => {} }
+      }
+    })
+    await mount.unmount()
+
+    primary.id = 'ZOMBIE'
+    secondary[0]!.id = 'ZOMBIE'
+    toggled.id = 'ZOMBIE'
+    expect(selection.current.primary).toEqual({ namespace: 'crane', id: 't1' })
+    expect(selection.current.secondary).toEqual([{ namespace: 'agv', id: 'a1' }])
+    expect(selection.isSelected({ namespace: 'crane', id: 't1' })).toBe(true)
+  })
+
+  it('Foundation ownership：initialScope / initial sites / sites.register 输入均无别名', () => {
+    const initialScope = { kind: 'site' as const, siteId: 's-init' }
+    const initialSite = {
+      id: 'site-init',
+      name: 'Init',
+      origin: { ...GEO },
+      bounds: { south: 1, west: 1, north: 2, east: 2 }
+    }
+    const world = createWorldApi({ initialScope, sites: [initialSite] })
+
+    // 初始输入对象后续修改不影响 truth
+    initialScope.siteId = 'hijacked'
+    initialSite.origin.heightMeters = 99_999
+    expect(world.session.scope).toEqual({ kind: 'site', siteId: 's-init' })
+    expect(world.sites.get('site-init')!.origin.heightMeters).toBe(GEO.heightMeters)
+
+    // register 输入在存续期间修改同样不影响 truth
+    const registered = {
+      id: 'site-reg',
+      name: 'Reg',
+      origin: { ...GEO },
+      bounds: { south: 1, west: 1, north: 2, east: 2 }
+    }
+    const d = world.sites.register(registered)
+    registered.origin.heightMeters = 99_999
+    registered.name = 'Hijacked'
+    const stored = world.sites.get('site-reg')!
+    expect(stored.origin.heightMeters).toBe(GEO.heightMeters)
+    expect(stored.name).toBe('Reg')
+    d.dispose()
+    expect(world.sites.get('site-reg')).toBeUndefined()
+  })
+})

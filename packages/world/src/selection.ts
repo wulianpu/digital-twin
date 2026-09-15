@@ -31,6 +31,12 @@ function snapshotState(): SelectionState {
   }
 }
 
+/** Issue #6：write-side alias 防线——setter 入参立即拷贝，内部 truth
+ * 不持有调用方可继续修改的 EntityRef 引用（identity 比较仍走 entityKey）。 */
+function ownEntity(entity: EntityRef): EntityRef {
+  return { ...entity }
+}
+
 function emit(): void {
   const snapshot = snapshotState()
   for (const cb of listeners) cb(snapshot)
@@ -42,18 +48,17 @@ const api: SelectionApi = {
   },
     setPrimary(entity) {
       if (
-        primary === entity ||
-        (primary !== undefined &&
-          entity !== undefined &&
-          entityKey(primary) === entityKey(entity))
+        primary !== undefined &&
+        entity !== undefined &&
+        entityKey(primary) === entityKey(entity)
       ) {
         return
       }
-      primary = entity
+      primary = entity ? ownEntity(entity) : undefined
       emit()
     },
     setSecondary(entities) {
-      secondary = [...entities]
+      secondary = entities.map(ownEntity)
       emit()
     },
     toggle(entity) {
@@ -61,7 +66,7 @@ const api: SelectionApi = {
       if (primary && entityKey(primary) === key) {
         primary = undefined
       } else {
-        primary = entity
+        primary = ownEntity(entity)
         secondary = secondary.filter((e) => entityKey(e) !== key)
       }
       emit()

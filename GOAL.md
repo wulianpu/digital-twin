@@ -301,3 +301,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   spatial-frame-alias/site-origin-alias/site-register-after-close，探针断言
   REJECTED/SAFE/IDENTITY-OK）+ scoped-lifecycle.test.ts +7 用例。
   验证：pnpm verify 全绿（含 2D-only Gate）、181/181 单测、compliance 31/31。
+
+- 2026-09-15 **Issue #6 修复（P0 回归：write-side mutable alias——setter 入参反向污染）**：
+  ①`WorldApi.setScope()` 入参立即 snapshotScope（initialScope 同样拷贝）——已卸载
+  Scene 修改历史入参对象不再改变 World truth、不产生无通知的状态漂移；
+  ②Selection 三个写入口（setPrimary/setSecondary/toggle）经 ownEntity 深拷贝每个
+  EntityRef，identity 比较仍走 entityKey；
+  ③Foundation value ownership 规则落地：sites.register 存防御性副本、initial sites
+  拷贝、ReferenceFrame frozen copy（#5 已做）——持久 value object 一律
+  copy/normalize/freeze，不长期借用调用方 mutable 引用；
+  ④hostile fixtures +4（world-scope-input-alias 含 onSessionChanged 零事件断言、
+  selection primary/secondary/toggle-input-alias）+ scoped-lifecycle.test.ts +3 用例。
+  验证：pnpm verify 全绿、185/185 单测、compliance 35/35。
