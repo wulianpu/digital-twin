@@ -164,6 +164,11 @@ export interface ToggleStressResult {
   mapLayersStable: boolean
   frameCallbacksStable: boolean
   graphicsMounts: number
+  /** Issue #18：twin-scene-view 事件序列（Last Intent Wins 验收）。 */
+  viewEvents: string[]
+  /** Issue #18：graphics resume/suspend 计数（final view 一致性验收）。 */
+  graphicsResumes: number
+  graphicsSuspends: number
   errors: unknown[]
 }
 
@@ -172,10 +177,18 @@ export interface ToggleStressResult {
  * toggles N times through its own UI buttons; selection/world state must
  * survive and resource counts must stay stable.
  */
+export interface ToggleStressOptions {
+  /** Issue #18：可控 deferred graphics use gate（确定性竞态）。 */
+  useGate?: Promise<void>
+  /** 每次 toggle 之后的钩子（用于在精确交错点释放 gate）。 */
+  onAfterToggle?: (index: number) => void | Promise<void>
+}
+
 export async function runToggleStress(
   sceneId: SceneId,
   loadEntry: EntryLoader,
-  toggles = 100
+  toggles = 100,
+  options: ToggleStressOptions = {}
 ): Promise<ToggleStressResult> {
   const result: ToggleStressResult = {
     toggles: 0,
@@ -184,6 +197,9 @@ export async function runToggleStress(
     mapLayersStable: false,
     frameCallbacksStable: false,
     graphicsMounts: 0,
+    viewEvents: [],
+    graphicsResumes: 0,
+    graphicsSuspends: 0,
     errors: []
   }
 
@@ -201,6 +217,13 @@ export async function runToggleStress(
   const data = new MockDataApi(counters)
   const mapAccess = new MockMapAccess(counters)
   const graphicsAccess = new MockGraphicsAccess(counters)
+  // Issue #18：deferred use gate（确定性竞态）
+  if (options.useGate) graphicsAccess.useGate = options.useGate
+  // 记录 Scene 发出的视图意图事件（最后一个必须等于最终 toggle 的视图）
+  uiContainer.addEventListener('twin-scene-view', (e) => {
+    const detail = (e as CustomEvent).detail as { view?: string }
+    if (detail?.view) result.viewEvents.push(detail.view)
+  })
 
   const host = new SceneHost({
     viewport: { ui: uiContainer },
@@ -246,6 +269,7 @@ export async function runToggleStress(
     await new Promise((resolve) => setTimeout(resolve, 0))
     graphicsAccess.pumpFrames(1)
     result.toggles++
+    await options.onAfterToggle?.(i)
   }
 
   // Issue #17-r2：CI 上 three chunk 的动态导入可能慢于整段点击循环——
@@ -254,7 +278,20 @@ export async function runToggleStress(
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
 
+  // Issue #17-r2：CI 上 three chunk 导入可能慢于整段点击循环——
+  // 等待首次 3D boot 真正发生（上限 3s），保证 graphicsMounts 语义确定
+  for (let i = 0; i < 300 && counters.graphicsUseCalls === 0; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+
+  // Issue #18：让 pending boot 完成路径（commit gate / 补提交）的微任务链
+  // 收敛后再读取 counters 与 viewEvents
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
   result.graphicsMounts = counters.graphicsUseCalls
+  // mock 的 graphics context.suspend/resume 计入专属计数器（map 用 suspends/resumes）
+  result.graphicsResumes = counters.graphicsResumes
+  result.graphicsSuspends = counters.graphicsSuspends
   result.sceneStillMounted = host.isActive && mount.state === 'active'
   result.selectionKept = selection.isSelected({ namespace: 'compliance', id: 'KEEP-ME' })
   result.mapLayersStable = counters.mapLayers === layersAfterMount

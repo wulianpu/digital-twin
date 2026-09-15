@@ -108,6 +108,12 @@ export function scopedGraphicsAccess(
       return {
         ...ctx,
         root: ctx.root,
+        // Issue #17-r2：currentContext 必须是实时 getter——spread 快照会把
+        // boot 之前的 undefined 固化，导致 resume/suspend 永远落空。
+        // 语义对齐 inner access：总是指向引擎当前 context。
+        get currentContext() {
+          return inner.currentContext
+        },
         // 问题3 修复：onFrame/onPick 创建时立即纳入 MountScope
         onFrame: (cb) => {
           scope.assertCanCreate('graphics.onFrame')

@@ -82,37 +82,66 @@ const entry: SceneEntry = {
       onSetView: (view) => void setView(view)
     })
 
-    async function setView(view: 'map' | 'graphics'): Promise<void> {
-      if (state.view === view) return
-      state.view = view
-      if (view === 'graphics') {
-        if (!graphicsHandle && !graphicsBooting) {
-          graphicsBooting = true
-          try {
-            const { mountGraphics } = await import('./graphics')
-            graphicsHandle = await mountGraphics(ctx)
-            graphicsBooting = false
-            if (ctx.signal.aborted) {
-              graphicsHandle.dispose()
-              graphicsHandle = undefined
-              return
-            }
-            graphicsHandle.updateShips(states)
-          } catch (error) {
-            graphicsBooting = false
-            if (!ctx.signal.aborted) throw error
-            return
-          }
-        }
+    // Issue #18：view intent generation——Last Intent Wins。ctx.signal 只表达
+    // SceneMount lifetime；view intent 自己持有 monotonic generation，跨 await
+    // 的 continuation 提交任何 suspend/resume/事件副作用前必须通过 isCurrent。
+    let viewIntent = 0
+    let desiredView: 'map' | 'graphics' = 'map'
+    let lastDispatchedView: 'map' | 'graphics' | undefined
+
+    function commitView(): void {
+      if (desiredView === 'graphics' && graphicsBooting) {
+        return // boot 完成路径会再次提交
+      }
+      if (desiredView === 'graphics') {
         mapHandle?.suspend()
         ctx.graphics?.currentContext?.resume()
       } else {
         mapHandle?.resume()
         ctx.graphics?.currentContext?.suspend()
       }
-      uiLayer.element.dispatchEvent(
-        new CustomEvent('twin-scene-view', { detail: { view }, bubbles: true })
-      )
+      if (lastDispatchedView !== desiredView) {
+        lastDispatchedView = desiredView
+        uiLayer.element.dispatchEvent(
+          new CustomEvent('twin-scene-view', { detail: { view: desiredView }, bubbles: true })
+        )
+      }
+    }
+
+    async function setView(view: 'map' | 'graphics'): Promise<void> {
+      if (state.view === view && !graphicsBooting) return
+      const generation = ++viewIntent
+      desiredView = view
+      state.view = view
+      const isCurrent = (): boolean =>
+        viewIntent === generation && !ctx.signal.aborted
+
+      if (view === 'graphics' && !graphicsHandle && !graphicsBooting) {
+        graphicsBooting = true
+        try {
+          const { mountGraphics } = await import('./graphics')
+          graphicsHandle = await mountGraphics(ctx)
+          graphicsBooting = false
+          if (ctx.signal.aborted) {
+            graphicsHandle.dispose()
+            graphicsHandle = undefined
+            return
+          }
+          graphicsHandle.updateShips(states)
+        } catch (error) {
+          graphicsBooting = false
+          // 仅当前 intent 的失败才向 UI 上抛（可重试）；stale intent 的失败
+          // 不得覆盖最新视图状态
+          if (isCurrent()) throw error
+          return
+        }
+      }
+
+      // commit gate：await 之后只有最新 intent 才能提交；boot 完成时按最新
+      // intent 补提交（G1 stale → G3 graphics 的场景由这里恢复）
+      if (isCurrent() || (desiredView === 'graphics' && !graphicsBooting)) {
+        commitView()
+      }
     }
 
     const { mountMap } = await import('./map')

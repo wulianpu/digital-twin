@@ -342,3 +342,51 @@ describe('Gate #2: production 2D ↔ 3D toggle ×100', () => {
     expect(result.mapLayersStable).toBe(true)
   }, 60_000)
 })
+
+/** ---------------- Issue #18：view intent generation（Last Intent Wins） */
+
+import { deferredGate } from './src/toggleGate'
+
+describe('Gate #2-r2：view intent generation（Issue #18）', () => {
+  it('map → graphics(pending) → map → boot resolve：最终严格为 map，graphics 从未 resume', async () => {
+    const gate = deferredGate()
+    const result = await runToggleStress(
+      'stack-yard',
+      () => import('@twin/scene-stack-yard'),
+      2,
+      {
+        useGate: gate.gate,
+        onAfterToggle: async (i) => {
+          if (i === 1) gate.release() // to2d 提交后才放行 boot
+        }
+      }
+    )
+    expect(result.errors).toEqual([])
+    expect(result.viewEvents).toEqual(['map']) // 无 stale graphics 事件
+    expect(result.viewEvents.at(-1)).toBe('map')
+    expect(result.graphicsResumes).toBe(0) // graphics 从未被 resume（不复活 3D）
+    expect(result.sceneStillMounted).toBe(true)
+    gate.dispose()
+  }, 30_000)
+
+  it('map → graphics(pending) → map → graphics：boot resolve 后补提交，single-flight 保持', async () => {
+    const gate = deferredGate()
+    const result = await runToggleStress(
+      'stack-yard',
+      () => import('@twin/scene-stack-yard'),
+      3,
+      {
+        useGate: gate.gate,
+        onAfterToggle: async (i) => {
+          if (i === 2) gate.release() // 最终 to3d 之后放行 boot
+        }
+      }
+    )
+    expect(result.errors).toEqual([])
+    expect(result.viewEvents.at(-1)).toBe('graphics')
+    expect(result.graphicsMounts).toBe(1) // boot single-flight
+    expect(result.graphicsResumes).toBeGreaterThanOrEqual(1)
+    expect(result.sceneStillMounted).toBe(true)
+    gate.dispose()
+  }, 30_000)
+})

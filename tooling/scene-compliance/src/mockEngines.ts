@@ -28,6 +28,8 @@ export interface MockCounters {
   pickCallbacks: number
   dataSubscriptions: number
   graphicsUseCalls: number
+  graphicsSuspends: number
+  graphicsResumes: number
   waterStateSets: number
   suspends: number
   resumes: number
@@ -42,6 +44,8 @@ export function freshCounters(): MockCounters {
     pickCallbacks: 0,
     dataSubscriptions: 0,
     graphicsUseCalls: 0,
+    graphicsSuspends: 0,
+    graphicsResumes: 0,
     waterStateSets: 0,
     suspends: 0,
     resumes: 0
@@ -162,6 +166,13 @@ export class MockMapAccess implements MapAccess {
 export class MockGraphicsAccess implements GraphicsAccess {
   readonly context: GraphicsContext
   state = 'UNINITIALIZED' as 'UNINITIALIZED' | 'ACTIVE' | 'DISPOSED'
+  /**
+   * Issue #18：可控 deferred use gate——Promise 未 resolve 时 use() 挂起，
+   * 用于确定性复现“首次 3D boot 慢于下一次 view toggle”的竞态。
+   */
+  useGate: Promise<void> | undefined
+  graphicsSuspends = 0
+  graphicsResumes = 0
   private readonly frameSubs = new Set<
     (info: { deltaSeconds: number; elapsedSeconds: number; frameIndex: number }) => void
   >()
@@ -242,10 +253,10 @@ export class MockGraphicsAccess implements GraphicsAccess {
         }
       },
       suspend: () => {
-        counters.suspends++
+        counters.graphicsSuspends++
       },
       resume: () => {
-        counters.resumes++
+        counters.graphicsResumes++
       },
       getDiagnostics: () =>
         ({
@@ -268,12 +279,20 @@ export class MockGraphicsAccess implements GraphicsAccess {
   use(): Promise<GraphicsContext> {
     this.counters.graphicsUseCalls++
     this.state = 'ACTIVE'
+    if (this.useGate) {
+      const context = this.context
+      return this.useGate.then(() => context)
+    }
     return Promise.resolve(this.context)
   }
 
   applyQuality(): void {}
-  suspend(): void {}
-  resume(): void {}
+  suspend(): void {
+    this.graphicsSuspends++
+  }
+  resume(): void {
+    this.graphicsResumes++
+  }
   getDiagnostics(): undefined {
     return undefined
   }

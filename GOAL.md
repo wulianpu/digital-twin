@@ -563,3 +563,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③回归测试 +3（GLOBAL pick 覆盖 + 旧写死 sceneRoots 行为暴露 + SITE 路径保护；
   层级 matrixWorld 自 scene 根更新）。
   验证：pnpm verify 全绿、278/278 单测、compliance 40/40、e2e 10/10。
+
+- 2026-09-16 **Issue #18 修复（P1：2D↔3D view intent generation）**：
+  ①三个 scene（global-ships/stack-yard/heavy-transport）setView 引入 monotonic
+  view intent generation——每次切换 `generation++` 并记录 desiredView；跨 await
+  的 continuation 提交 suspend/resume/事件副作用前必须 isCurrent（含
+  ctx.signal.aborted 联合判定，teardown 语义不变）；
+  ②boot single-flight 与 view commit 解耦（方案 B）：boot 完成只是资源准备，
+  按【最新 intent】补提交（G1 stale → G3 graphics 由完成路径恢复 commit）；
+  stale intent 的 boot 失败静默丢弃，不覆盖最新视图；当前 intent 的失败仍上抛
+  （可重试，booting 标志复位）；
+  ③commitView 统一提交（map/graphics suspend-resume + twin-scene-view 事件
+  lastDispatchedView 去重），消除三份重复状态机的时序分歧；
+  ④mockEngines：MockGraphicsAccess 增加 useGate（deferred use）与
+  graphicsSuspends/graphicsResumes 专属计数器；
+  ⑤runToggleStress：useGate + onAfterToggle 钩子 + viewEvents 记录 +
+  last-toggle-wins 断言素材；修复 scoped graphics currentContext spread 快照
+  bug（改为实时 getter——此前 resume/suspend 经 spread 永远落空）；
+  ⑥compliance 竞态测试 +2（map-wins / boot-resolve 补提交 single-flight）。
+  验证：pnpm verify 全绿、280/280 单测、compliance 42/42、e2e 10/10。

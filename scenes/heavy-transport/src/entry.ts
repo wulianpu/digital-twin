@@ -134,27 +134,50 @@ const entry: SceneEntry = {
       }
     })
 
+    // Issue #18：view intent generation——Last Intent Wins。ctx.signal 只表达
+    // SceneMount lifetime；view intent 自己持有 monotonic generation，跨 await
+    // 的 continuation 提交任何 suspend/resume/事件副作用前必须通过 isCurrent。
+    let viewIntent = 0
+    let desiredView: 'map' | 'graphics' = 'map'
+    let lastDispatchedView: 'map' | 'graphics' | undefined
+
+    function commitView(): void {
+      if (desiredView === 'graphics' && graphicsBooting) {
+        return // boot 完成路径会再次提交
+      }
+      if (desiredView === 'graphics') {
+        mapHandle?.suspend()
+        ctx.graphics?.currentContext?.resume()
+        focusTrolley()
+      } else {
+        mapHandle?.resume()
+        ctx.graphics?.currentContext?.suspend() // §64: 非活跃引擎挂起
+      }
+      if (lastDispatchedView !== desiredView) {
+        lastDispatchedView = desiredView
+        uiLayer.element.dispatchEvent(
+          new CustomEvent('twin-scene-view', { detail: { view: desiredView }, bubbles: true })
+        )
+      }
+    }
+
     async function setView(view: 'map' | 'graphics'): Promise<void> {
-      if (state.view === view) return
+      if (state.view === view && !graphicsBooting) return
+      const generation = ++viewIntent
+      desiredView = view
       state.view = view
-      if (view === 'graphics') {
-        if (!graphicsHandle && !graphicsBooting) {
-          graphicsBooting = true
-          try {
-            const { mountGraphics } = await import('./graphics')
-            graphicsHandle = await mountGraphics(ctx, plan)
-            graphicsBooting = false
-            if (ctx.signal.aborted) {
-              graphicsHandle.dispose()
-              graphicsHandle = undefined
-              return
-            }
-          } catch (error) {
-            // Issue #17-r2：unmount 竞态下的 SceneUnmountedError 静默放弃
-            //（Host 已兜底回收），booting 标志必须复位以免永久卡死；
-            // 真实失败（非 teardown）仍上抛给 UI。
-            graphicsBooting = false
-            if (!ctx.signal.aborted) throw error
+      const isCurrent = (): boolean =>
+        viewIntent === generation && !ctx.signal.aborted
+
+      if (view === 'graphics' && !graphicsHandle && !graphicsBooting) {
+        graphicsBooting = true
+        try {
+          const { mountGraphics } = await import('./graphics')
+          graphicsHandle = await mountGraphics(ctx, plan)
+          graphicsBooting = false
+          if (ctx.signal.aborted) {
+            graphicsHandle.dispose()
+            graphicsHandle = undefined
             return
           }
           // Scene-private preview loop (§28) — the engine's frame loop is
@@ -176,17 +199,21 @@ const entry: SceneEntry = {
             }
           })
           void lastFrameMs
+        } catch (error) {
+          // Issue #17-r2：unmount 竞态下的 SceneUnmountedError 静默放弃
+          //（Host 已兜底回收），booting 标志必须复位以免永久卡死；
+          // 真实失败（非 teardown）仍上抛给 UI。
+          graphicsBooting = false
+          if (isCurrent()) throw error
+          return
         }
-        mapHandle?.suspend()
-        ctx.graphics?.currentContext?.resume()
-        focusTrolley()
-      } else {
-        mapHandle?.resume()
-        ctx.graphics?.currentContext?.suspend() // §64: 非活跃引擎挂起
       }
-      uiLayer.element.dispatchEvent(
-        new CustomEvent('twin-scene-view', { detail: { view }, bubbles: true })
-      )
+
+      // commit gate：await 之后只有最新 intent 才能提交；boot 完成时按最新
+      // intent 补提交（G1 stale → G3 graphics 的场景由这里恢复）
+      if (isCurrent() || (desiredView === 'graphics' && !graphicsBooting)) {
+        commitView()
+      }
     }
 
     const app = createApp(Host)
