@@ -141,7 +141,7 @@ export function createMockMap(counters: MockCounters): MapContext {
 
 export class MockMapAccess implements MapAccess {
   private context: MapContext | undefined
-  state = 'UNINITIALIZED' as 'UNINITIALIZED' | 'ACTIVE' | 'DISPOSED'
+  state = 'UNINITIALIZED' as 'UNINITIALIZED' | 'ACTIVE' | 'SUSPENDED' | 'DISPOSED'
 
   constructor(private readonly counters: MockCounters) {}
 
@@ -165,7 +165,7 @@ export class MockMapAccess implements MapAccess {
 
 export class MockGraphicsAccess implements GraphicsAccess {
   readonly context: GraphicsContext
-  state = 'UNINITIALIZED' as 'UNINITIALIZED' | 'ACTIVE' | 'DISPOSED'
+  state = 'UNINITIALIZED' as 'UNINITIALIZED' | 'ACTIVE' | 'SUSPENDED' | 'DISPOSED'
   /**
    * Issue #18：可控 deferred use gate——Promise 未 resolve 时 use() 挂起，
    * 用于确定性复现“首次 3D boot 慢于下一次 view toggle”的竞态。
@@ -178,6 +178,8 @@ export class MockGraphicsAccess implements GraphicsAccess {
   >()
 
   constructor(private readonly counters: MockCounters) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- 闭包内访问实例状态
+    const self = this
     const root = new THREE.Group()
     const frameSubs = this.frameSubs
     const pickSubs = new Set<(event: PickEvent) => void>()
@@ -254,9 +256,11 @@ export class MockGraphicsAccess implements GraphicsAccess {
       },
       suspend: () => {
         counters.graphicsSuspends++
+        self.state = 'SUSPENDED' // 模拟真实 frameLoop 停止（§64）
       },
       resume: () => {
         counters.graphicsResumes++
+        self.state = 'ACTIVE'
       },
       getDiagnostics: () =>
         ({
@@ -289,9 +293,11 @@ export class MockGraphicsAccess implements GraphicsAccess {
   applyQuality(): void {}
   suspend(): void {
     this.graphicsSuspends++
+    this.state = 'SUSPENDED' // 模拟真实 frameLoop 停止（§64）
   }
   resume(): void {
     this.graphicsResumes++
+    this.state = 'ACTIVE'
   }
   getDiagnostics(): undefined {
     return undefined
@@ -301,8 +307,9 @@ export class MockGraphicsAccess implements GraphicsAccess {
     this.state = 'DISPOSED'
   }
 
-  /** Deterministic frame pump for the harness. */
+  /** Deterministic frame pump for the harness（SUSPENDED 时不推进——§64）。 */
   pumpFrames(cycles: number): void {
+    if (this.state !== 'ACTIVE') return
     const subs = [...this.frameSubs]
     for (let i = 0; i < cycles; i++) {
       for (const cb of subs) {

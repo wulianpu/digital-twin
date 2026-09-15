@@ -1,4 +1,5 @@
 import type { SceneContext, SceneEntry, SceneMount } from '@twin/sdk'
+import { SceneViewController } from '@twin/scenes-shared'
 import { reactive } from 'vue'
 import { frameLocalToGeodetic } from '@twin/spatial'
 import { STACK_CONTRACT, decodeStack } from '@twin/domain-logistics'
@@ -48,7 +49,49 @@ const entry: SceneEntry = {
     // eslint-disable-next-line prefer-const -- 先声明后异步赋值：闭包在就绪前需可选语义
     let mapHandle: StackMapHandle | undefined
     let graphicsHandle: StackGraphicsHandle | undefined
-    let graphicsBooting = false
+
+    // Issue #18-r2：view intent 控制器——joinable single-flight boot +
+    // monotonic intent + latest-view commit（含 boot 后按 intent 显式 suspend）
+    const view = new SceneViewController({
+      prepareGraphics: async () => {
+        const { mountGraphics } = await import('./graphics')
+        const handle = await mountGraphics(ctx, layout, {
+          onPickStack: (code) => applySelection(code ?? undefined)
+        })
+        if (ctx.signal.aborted) {
+          handle.dispose() // #1：unmount 竞态下的迟到引导立即自毁
+          graphicsHandle = undefined
+          return handle
+        }
+        graphicsHandle = handle
+        return handle
+      },
+      applyActiveView: (v) => {
+        if (v === 'graphics') {
+          mapHandle?.suspend()
+          ctx.graphics?.currentContext?.resume()
+        } else {
+          mapHandle?.resume()
+          ctx.graphics?.currentContext?.suspend() // §64: 非活跃引擎挂起
+        }
+      },
+      suspendGraphics: () => ctx.graphics?.currentContext?.suspend(),
+      dispatchView: (v) =>
+        uiLayer.element.dispatchEvent(
+          new CustomEvent('twin-scene-view', { detail: { view: v }, bubbles: true })
+        ),
+      isAborted: () => ctx.signal.aborted,
+      onIntentChanged: (v) => {
+        state.view = v
+      },
+      onRollbackToMap: () => {
+        state.view = 'map'
+      },
+      onGraphicsError: (error) => {
+        console.error('[scene] 3D 初始化失败（已回滚到 2D）', error)
+      }
+    })
+
 
     function applySelection(code: string | undefined) {
       state.selectedCode = code
@@ -79,73 +122,6 @@ const entry: SceneEntry = {
       })
     }
 
-    // Issue #18：view intent generation——Last Intent Wins。ctx.signal 只表达
-    // SceneMount lifetime；view intent 自己持有 monotonic generation，跨 await
-    // 的 continuation 提交任何 suspend/resume/事件副作用前必须通过 isCurrent。
-    let viewIntent = 0
-    let desiredView: 'map' | 'graphics' = 'map'
-    let lastDispatchedView: 'map' | 'graphics' | undefined
-
-    function commitView(): void {
-      if (desiredView === 'graphics' && graphicsBooting) {
-        return // boot 完成路径会再次提交
-      }
-      if (desiredView === 'graphics') {
-        mapHandle?.suspend()
-        ctx.graphics?.currentContext?.resume()
-      } else {
-        mapHandle?.resume()
-        ctx.graphics?.currentContext?.suspend() // §64: 非活跃引擎挂起
-      }
-      if (lastDispatchedView !== desiredView) {
-        lastDispatchedView = desiredView
-        // S1: 通知宿主应用当前视图意图（DOM 事件，场景保持应用无关）
-        uiLayer.element.dispatchEvent(
-          new CustomEvent('twin-scene-view', { detail: { view: desiredView }, bubbles: true })
-        )
-      }
-    }
-
-    async function setView(view: 'map' | 'graphics'): Promise<void> {
-      if (state.view === view && !graphicsBooting) return
-      const generation = ++viewIntent
-      desiredView = view
-      state.view = view
-      const isCurrent = (): boolean =>
-        viewIntent === generation && !ctx.signal.aborted
-
-      if (view === 'graphics' && !graphicsHandle && !graphicsBooting) {
-        graphicsBooting = true
-        try {
-          // Lazy: three + graphics chunk download HERE, on demand (§26).
-          const { mountGraphics } = await import('./graphics')
-          graphicsHandle = await mountGraphics(ctx, layout, {
-            onPickStack: (code) => applySelection(code ?? undefined)
-          })
-          // 问题6：late bootstrap——unmount 后完成的异步引导立即自毁
-          if (ctx.signal.aborted) {
-            graphicsHandle.dispose()
-            graphicsHandle = undefined
-            graphicsBooting = false
-            return
-          }
-        } catch (error) {
-          graphicsBooting = false
-          // 仅当前 intent 的失败才向 UI 上抛（可重试）；stale intent 的失败
-          // 不得覆盖最新视图状态
-          if (isCurrent()) throw error
-          return
-        }
-        graphicsBooting = false
-      }
-
-      // commit gate：await 之后只有最新 intent 才能提交；boot 完成时按最新
-      // intent 补提交（G1 stale → G3 graphics 的场景由这里恢复）
-      if (isCurrent() || (desiredView === 'graphics' && !graphicsBooting)) {
-        commitView()
-      }
-    }
-
     const panel = mountStackPanel(uiLayer.element, {
       cells: layout.cells.map((c) => ({
         code: c.code,
@@ -156,7 +132,7 @@ const entry: SceneEntry = {
       state,
       onSelect,
       onFocus,
-      onSetView: (view) => void setView(view)
+      onSetView: (v) => void view.setView(v)
     })
 
     // Map-only cold start: the initial view never imports three.

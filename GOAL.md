@@ -582,3 +582,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   bug（改为实时 getter——此前 resume/suspend 经 spread 永远落空）；
   ⑥compliance 竞态测试 +2（map-wins / boot-resolve 补提交 single-flight）。
   验证：pnpm verify 全绿、280/280 单测、compliance 42/42、e2e 10/10。
+
+- 2026-09-16 **Issue #18 二次复审修复（P1：boot 后未 suspend + 失败/重试语义未闭环）**：
+  ①新增 `scenes/shared`（@twin/scenes-shared）——`SceneViewController` 薄控制器：
+  joinable single-flight boot（Promise attempt，后续同向 intent join）、monotonic
+  intent、latest-view commit、boot 成功而最新 intent 为 map 时显式
+  `suspendGraphics()`（真实 runtime 默认 ACTIVE——不再只依赖 runtime 尚不存在
+  时的 suspend）、当前 graphics intent 失败 → 回滚 map + 错误通道（desired 复位
+  可重试）、stale 失败不污染当前视图；
+  ②三 scene 接入 controller（含 production 之外三个的 boot guard 收敛；
+  heavy-transport 的 onFrame 预览循环迁入 prepareGraphics，挂起即不推进）；
+  ③mock 语义升级：MockGraphicsAccess suspend/resume 维护 ACTIVE/SUSPENDED 状态、
+  pumpFrames 挂起时不推进（防 false green）；useGate + rejecting deferred 支持；
+  ④runToggleStress 暴露 graphicsState/viewEvents/suspend-resume 计数；
+  compliance 竞态测试 +4（SUSPENDED + frame 冻结 / reject 回滚重试 / map-wins /
+  boot-resolve 补提交 single-flight）。
+  验证：pnpm verify 全绿、282/282 单测、compliance 44/44、e2e 10/10。

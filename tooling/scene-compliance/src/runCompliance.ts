@@ -169,6 +169,8 @@ export interface ToggleStressResult {
   /** Issue #18：graphics resume/suspend 计数（final view 一致性验收）。 */
   graphicsResumes: number
   graphicsSuspends: number
+  /** Issue #18-r2：最终 engine 状态（ACTIVE/SUSPENDED——防 false green）。 */
+  graphicsState: string
   errors: unknown[]
 }
 
@@ -200,6 +202,7 @@ export async function runToggleStress(
     viewEvents: [],
     graphicsResumes: 0,
     graphicsSuspends: 0,
+    graphicsState: 'UNINITIALIZED',
     errors: []
   }
 
@@ -292,6 +295,7 @@ export async function runToggleStress(
   // mock 的 graphics context.suspend/resume 计入专属计数器（map 用 suspends/resumes）
   result.graphicsResumes = counters.graphicsResumes
   result.graphicsSuspends = counters.graphicsSuspends
+  result.graphicsState = graphicsAccess.state
   result.sceneStillMounted = host.isActive && mount.state === 'active'
   result.selectionKept = selection.isSelected({ namespace: 'compliance', id: 'KEEP-ME' })
   result.mapLayersStable = counters.mapLayers === layersAfterMount

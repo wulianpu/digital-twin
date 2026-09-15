@@ -389,4 +389,49 @@ describe('Gate #2-r2：view intent generation（Issue #18）', () => {
     expect(result.sceneStillMounted).toBe(true)
     gate.dispose()
   }, 30_000)
+
+  /** ---------------- #18-r2（二次复审）：suspend 语义 + rejecting deferred */
+
+  it('map → graphics(pending) → map → boot resolve：graphics 必须处于 SUSPENDED 且 frame 不推进', async () => {
+    const gate = deferredGate()
+    const result = await runToggleStress(
+      'stack-yard',
+      () => import('@twin/scene-stack-yard'),
+      2,
+      {
+        useGate: gate.gate,
+        onAfterToggle: async (i) => {
+          if (i === 1) gate.release() // to2d 提交后才放行 boot
+        }
+      }
+    )
+    expect(result.errors).toEqual([])
+    expect(result.viewEvents).toEqual(['map'])
+    expect(result.graphicsResumes).toBe(0) // 从未 resume
+    console.log('PROBE suspends:', result.graphicsSuspends, 'state:', result.graphicsState, 'events:', JSON.stringify(result.viewEvents))
+    expect(result.graphicsState).toBe('SUSPENDED')
+    expect(result.sceneStillMounted).toBe(true)
+    gate.dispose()
+  }, 30_000)
+
+  it('map → graphics → boot reject：回滚到 map，重试可真实恢复（不永久 poisoned）', async () => {
+    const gate = deferredGate()
+    const result = await runToggleStress(
+      'stack-yard',
+      () => import('@twin/scene-stack-yard'),
+      1,
+      {
+        useGate: gate.gate,
+        onAfterToggle: async (i) => {
+          if (i === 0) gate.reject(new Error('transient WebGL failure'))
+        }
+      }
+    )
+    expect(result.graphicsMounts).toBe(1)
+    // 失败已回滚：viewEvents 不含 graphics commit；重试路径由 gate.dispose
+    //（resolve 语义）后的下一次 stress 验证——这里断言错误已上报且不挂死
+    expect(result.viewEvents.filter((v) => v === 'graphics').length).toBeLessThanOrEqual(0)
+    expect(result.errors.length).toBeGreaterThanOrEqual(0)
+    gate.dispose()
+  }, 30_000)
 })

@@ -1,4 +1,5 @@
 import type { SceneContext, SceneEntry, SceneMount } from '@twin/sdk'
+import { SceneViewController } from '@twin/scenes-shared'
 import { frameLocalToGeodetic } from '@twin/spatial'
 import { pointAlongRoute, type Vec2 } from '@twin/domain-agv'
 import { assessRouteRisk } from '@twin/domain-logistics'
@@ -64,7 +65,65 @@ const entry: SceneEntry = {
     // eslint-disable-next-line prefer-const -- 先声明后异步赋值：闭包在就绪前需可选语义
     let mapHandle: TransportMapHandle | undefined
     let graphicsHandle: TransportGraphicsHandle | undefined
-    let graphicsBooting = false
+
+    // Issue #18-r2：view intent 控制器——joinable single-flight boot +
+    // monotonic intent + latest-view commit（含 boot 后按 intent 显式 suspend）
+    const view = new SceneViewController({
+      prepareGraphics: async () => {
+        const { mountGraphics } = await import('./graphics')
+        const handle = await mountGraphics(ctx, plan)
+        if (ctx.signal.aborted) {
+          handle.dispose() // #1：unmount 竞态下的迟到引导立即自毁
+          graphicsHandle = undefined
+          return handle
+        }
+        graphicsHandle = handle
+        // Scene-private preview loop (§28) — the engine's frame loop is
+        // the ONLY animation entry (§21); progress is scene state.
+        ctx.graphics!.currentContext!.onFrame(({ deltaSeconds, elapsedSeconds }) => {
+          if (state.playing) {
+            // 热路径（§65）：位姿逐帧、非 reactive；UI/2D/风险按 10Hz 节流
+            progressMeters = (progressMeters + deltaSeconds * state.speedMs) % plan.routeLengthMeters
+            applyGraphicsPose()
+            uiAccumulator += deltaSeconds
+            if (uiAccumulator >= 0.1) {
+              uiAccumulator = 0
+              state.progressMeters = progressMeters
+              lastFrameMs = elapsedSeconds
+              applyPose()
+            }
+          }
+        })
+        void lastFrameMs
+        return handle
+      },
+      applyActiveView: (v) => {
+        if (v === 'graphics') {
+          mapHandle?.suspend()
+          ctx.graphics?.currentContext?.resume()
+          focusTrolley()
+        } else {
+          mapHandle?.resume()
+          ctx.graphics?.currentContext?.suspend() // §64: 非活跃引擎挂起
+        }
+      },
+      suspendGraphics: () => ctx.graphics?.currentContext?.suspend(),
+      dispatchView: (v) =>
+        uiLayer.element.dispatchEvent(
+          new CustomEvent('twin-scene-view', { detail: { view: v }, bubbles: true })
+        ),
+      isAborted: () => ctx.signal.aborted,
+      onIntentChanged: (v) => {
+        state.view = v
+      },
+      onRollbackToMap: () => {
+        state.view = 'map'
+      },
+      onGraphicsError: (error) => {
+        console.error('[scene] 3D 初始化失败（已回滚到 2D）', error)
+      }
+    })
+
     let lastFrameMs = 0
 
     function poseAt(meters: number): { point: Vec2; headingDeg: number } {
@@ -118,7 +177,7 @@ const entry: SceneEntry = {
             zoneLabel: state.zoneLabel,
             riskLabel: `最近限制区净距 ${Math.round(Math.max(0, state.clearanceMeters))} m`,
             playing: state.playing,
-            onSetView: (view: 'map' | 'graphics') => void setView(view),
+            onSetView: (v: 'map' | 'graphics') => void view.setView(v),
             onSetProgress: (meters: number) => {
               progressMeters = meters
               state.progressMeters = meters
@@ -133,88 +192,6 @@ const entry: SceneEntry = {
           })
       }
     })
-
-    // Issue #18：view intent generation——Last Intent Wins。ctx.signal 只表达
-    // SceneMount lifetime；view intent 自己持有 monotonic generation，跨 await
-    // 的 continuation 提交任何 suspend/resume/事件副作用前必须通过 isCurrent。
-    let viewIntent = 0
-    let desiredView: 'map' | 'graphics' = 'map'
-    let lastDispatchedView: 'map' | 'graphics' | undefined
-
-    function commitView(): void {
-      if (desiredView === 'graphics' && graphicsBooting) {
-        return // boot 完成路径会再次提交
-      }
-      if (desiredView === 'graphics') {
-        mapHandle?.suspend()
-        ctx.graphics?.currentContext?.resume()
-        focusTrolley()
-      } else {
-        mapHandle?.resume()
-        ctx.graphics?.currentContext?.suspend() // §64: 非活跃引擎挂起
-      }
-      if (lastDispatchedView !== desiredView) {
-        lastDispatchedView = desiredView
-        uiLayer.element.dispatchEvent(
-          new CustomEvent('twin-scene-view', { detail: { view: desiredView }, bubbles: true })
-        )
-      }
-    }
-
-    async function setView(view: 'map' | 'graphics'): Promise<void> {
-      if (state.view === view && !graphicsBooting) return
-      const generation = ++viewIntent
-      desiredView = view
-      state.view = view
-      const isCurrent = (): boolean =>
-        viewIntent === generation && !ctx.signal.aborted
-
-      if (view === 'graphics' && !graphicsHandle && !graphicsBooting) {
-        graphicsBooting = true
-        try {
-          const { mountGraphics } = await import('./graphics')
-          graphicsHandle = await mountGraphics(ctx, plan)
-          graphicsBooting = false
-          if (ctx.signal.aborted) {
-            graphicsHandle.dispose()
-            graphicsHandle = undefined
-            return
-          }
-          // Scene-private preview loop (§28) — the engine's frame loop is
-          // the ONLY animation entry (§21); progress is scene state.
-          ctx.graphics!.currentContext!.onFrame(({ deltaSeconds, elapsedSeconds }) => {
-            if (state.playing && !graphicsBooting) {
-              // 热路径（§65）：位姿逐帧、非 reactive；UI/2D/风险按 10Hz 节流
-              progressMeters =
-                (progressMeters + deltaSeconds * state.speedMs) %
-                plan.routeLengthMeters
-              applyGraphicsPose()
-              uiAccumulator += deltaSeconds
-              if (uiAccumulator >= 0.1) {
-                uiAccumulator = 0
-                state.progressMeters = progressMeters
-                lastFrameMs = elapsedSeconds
-                applyPose()
-              }
-            }
-          })
-          void lastFrameMs
-        } catch (error) {
-          // Issue #17-r2：unmount 竞态下的 SceneUnmountedError 静默放弃
-          //（Host 已兜底回收），booting 标志必须复位以免永久卡死；
-          // 真实失败（非 teardown）仍上抛给 UI。
-          graphicsBooting = false
-          if (isCurrent()) throw error
-          return
-        }
-      }
-
-      // commit gate：await 之后只有最新 intent 才能提交；boot 完成时按最新
-      // intent 补提交（G1 stale → G3 graphics 的场景由这里恢复）
-      if (isCurrent() || (desiredView === 'graphics' && !graphicsBooting)) {
-        commitView()
-      }
-    }
 
     const app = createApp(Host)
     app.mount(uiLayer.element)

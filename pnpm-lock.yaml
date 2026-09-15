@@ -512,6 +512,9 @@ importers:
       '@twin/domain-vessel':
         specifier: workspace:*
         version: link:../../domains/vessel
+      '@twin/scenes-shared':
+        specifier: workspace:*
+        version: link:../shared
       '@twin/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -546,6 +549,9 @@ importers:
       '@twin/domain-logistics':
         specifier: workspace:*
         version: link:../../domains/logistics
+      '@twin/scenes-shared':
+        specifier: workspace:*
+        version: link:../shared
       '@twin/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -609,11 +615,20 @@ importers:
         specifier: 0.186.0
         version: 0.186.0
 
+  scenes/shared:
+    dependencies:
+      '@twin/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+
   scenes/stack-yard:
     dependencies:
       '@twin/domain-logistics':
         specifier: workspace:*
         version: link:../../domains/logistics
+      '@twin/scenes-shared':
+        specifier: workspace:*
+        version: link:../shared
       '@twin/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk

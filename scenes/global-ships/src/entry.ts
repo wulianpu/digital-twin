@@ -1,3 +1,4 @@
+import { SceneViewController } from '@twin/scenes-shared'
 import type { SceneContext, SceneEntry, SceneMount } from '@twin/sdk'
 import { reactive } from 'vue'
 import {
@@ -28,7 +29,47 @@ const entry: SceneEntry = {
     // eslint-disable-next-line prefer-const -- 先声明后异步赋值：闭包在就绪前需可选语义
     let mapHandle: ShipsMapHandle | undefined
     let graphicsHandle: { updateShips(states: ReadonlyMap<string, VesselState>): void; dispose(): void } | undefined
-    let graphicsBooting = false
+
+    // Issue #18-r2：view intent 控制器——joinable single-flight boot +
+    // monotonic intent + latest-view commit（含 boot 后按 intent 显式 suspend）
+    const view = new SceneViewController({
+      prepareGraphics: async () => {
+        const { mountGraphics } = await import('./graphics')
+        const handle = await mountGraphics(ctx)
+        if (ctx.signal.aborted) {
+          handle.dispose() // #1：unmount 竞态下的迟到引导立即自毁
+          graphicsHandle = undefined
+          return handle
+        }
+        graphicsHandle = handle
+        graphicsHandle.updateShips(states)
+        return handle
+      },
+      applyActiveView: (v) => {
+        if (v === 'graphics') {
+          mapHandle?.suspend()
+          ctx.graphics?.currentContext?.resume()
+        } else {
+          mapHandle?.resume()
+          ctx.graphics?.currentContext?.suspend()
+        }
+      },
+      suspendGraphics: () => ctx.graphics?.currentContext?.suspend(),
+      dispatchView: (v) =>
+        uiLayer.element.dispatchEvent(
+          new CustomEvent('twin-scene-view', { detail: { view: v }, bubbles: true })
+        ),
+      isAborted: () => ctx.signal.aborted,
+      onIntentChanged: (v) => {
+        state.view = v
+      },
+      onRollbackToMap: () => {
+        state.view = 'map'
+      },
+      onGraphicsError: (error) => {
+        console.error('[global-ships] 3D 初始化失败（已回滚到 2D）', error)
+      }
+    })
 
     function applySelection(key: string | undefined) {
       state.selectedKey = key
@@ -79,70 +120,8 @@ const entry: SceneEntry = {
         })),
       onSelect,
       onFocus,
-      onSetView: (view) => void setView(view)
+      onSetView: (v) => void view.setView(v)
     })
-
-    // Issue #18：view intent generation——Last Intent Wins。ctx.signal 只表达
-    // SceneMount lifetime；view intent 自己持有 monotonic generation，跨 await
-    // 的 continuation 提交任何 suspend/resume/事件副作用前必须通过 isCurrent。
-    let viewIntent = 0
-    let desiredView: 'map' | 'graphics' = 'map'
-    let lastDispatchedView: 'map' | 'graphics' | undefined
-
-    function commitView(): void {
-      if (desiredView === 'graphics' && graphicsBooting) {
-        return // boot 完成路径会再次提交
-      }
-      if (desiredView === 'graphics') {
-        mapHandle?.suspend()
-        ctx.graphics?.currentContext?.resume()
-      } else {
-        mapHandle?.resume()
-        ctx.graphics?.currentContext?.suspend()
-      }
-      if (lastDispatchedView !== desiredView) {
-        lastDispatchedView = desiredView
-        uiLayer.element.dispatchEvent(
-          new CustomEvent('twin-scene-view', { detail: { view: desiredView }, bubbles: true })
-        )
-      }
-    }
-
-    async function setView(view: 'map' | 'graphics'): Promise<void> {
-      if (state.view === view && !graphicsBooting) return
-      const generation = ++viewIntent
-      desiredView = view
-      state.view = view
-      const isCurrent = (): boolean =>
-        viewIntent === generation && !ctx.signal.aborted
-
-      if (view === 'graphics' && !graphicsHandle && !graphicsBooting) {
-        graphicsBooting = true
-        try {
-          const { mountGraphics } = await import('./graphics')
-          graphicsHandle = await mountGraphics(ctx)
-          graphicsBooting = false
-          if (ctx.signal.aborted) {
-            graphicsHandle.dispose()
-            graphicsHandle = undefined
-            return
-          }
-          graphicsHandle.updateShips(states)
-        } catch (error) {
-          graphicsBooting = false
-          // 仅当前 intent 的失败才向 UI 上抛（可重试）；stale intent 的失败
-          // 不得覆盖最新视图状态
-          if (isCurrent()) throw error
-          return
-        }
-      }
-
-      // commit gate：await 之后只有最新 intent 才能提交；boot 完成时按最新
-      // intent 补提交（G1 stale → G3 graphics 的场景由这里恢复）
-      if (isCurrent() || (desiredView === 'graphics' && !graphicsBooting)) {
-        commitView()
-      }
-    }
 
     const { mountMap } = await import('./map')
     mapHandle = await mountMap(ctx, tracks, {
