@@ -195,3 +195,147 @@ export const zombieViewWrite: SceneEntry = {
     }
   }
 }
+
+/** ---------------------------------------------------- Issue #5（alias 旁路） */
+
+/** 嵌套 capability 旁路：ctx.world.selection 必须与 ctx.selection 同一实例 */
+export const zombieWorldNestedSelection: SceneEntry = {
+  async mount(ctx) {
+    zombieWriteProbes['nested-selection-identity'] =
+      ctx.world.selection === ctx.selection ? 'IDENTITY-OK' : 'FORKED'
+    const nested = ctx.world.selection
+    return {
+      unmount() {
+        probe('nested-selection', () =>
+          nested.setPrimary({ namespace: 'hostile', id: 'zombie' })
+        )
+      }
+    }
+  }
+}
+
+/** WorldSession.scope 可变别名：修改快照不得反向污染 World truth */
+export const zombieWorldSessionScopeAlias: SceneEntry = {
+  async mount(ctx) {
+    const world = ctx.world
+    const cached = world.session.scope
+    const baseline = JSON.stringify(world.session.scope)
+    return {
+      unmount() {
+        try {
+          if (cached.kind === 'site') {
+            ;(cached as { siteId: string }).siteId = 'hostile-site'
+          } else if (cached.kind === 'entity') {
+            ;(cached as { entity: { id: string } }).entity.id = 'zombie'
+          }
+        } catch { /* frozen 亦可 */ }
+        // 经读路径回读真实 World scope（read 透传，写被拒）
+        const after = JSON.stringify(world.session.scope)
+        zombieWriteProbes['session-scope-alias'] = after === baseline ? 'SAFE' : 'POLLUTED'
+      }
+    }
+  }
+}
+
+/** SelectionState.current 可变别名：修改快照不得污染唯一 Selection */
+export const zombieSelectionCurrentAlias: SceneEntry = {
+  async mount(ctx) {
+    const selection = ctx.selection
+    selection.setPrimary({ namespace: 'hostile', id: 'keep-me' })
+    const cached = selection.current
+    return {
+      unmount() {
+        try {
+          if (cached.primary) cached.primary.id = 'zombie'
+          for (const entity of cached.secondary) entity.id = 'zombie'
+        } catch { /* frozen 亦可 */ }
+        const stillIntact =
+          selection.current.primary?.id === 'keep-me' &&
+          selection.isSelected({ namespace: 'hostile', id: 'keep-me' })
+        zombieWriteProbes['selection-current-alias'] = stillIntact ? 'SAFE' : 'POLLUTED'
+      }
+    }
+  }
+}
+
+/** Spatial frame 可变别名：getFrame 返回值不得污染后续坐标转换 */
+export const zombieSpatialFrameAlias: SceneEntry = {
+  async mount(ctx) {
+    const spatial = ctx.spatial
+    const frame = spatial.ensureEnuFrame('hostile-alias-frame', {
+      longitudeDegrees: 121.7821,
+      latitudeDegrees: 31.3622,
+      heightMeters: 4.2,
+      verticalReference: 'ellipsoid'
+    })
+    const baseline = frame.originECEF.x
+    return {
+      unmount() {
+        try {
+          ;(frame.originECEF as { x: number }).x = baseline + 100_000
+          ;(frame.basisECEF as { xx: number }).xx = 0
+        } catch { /* frozen */ }
+        const stored = spatial.getFrame('hostile-alias-frame')
+        const intact =
+          stored !== undefined &&
+          stored.originECEF.x === baseline &&
+          stored.basisECEF.xx !== 0
+        zombieWriteProbes['spatial-frame-alias'] = intact ? 'SAFE' : 'POLLUTED'
+      }
+    }
+  }
+}
+
+/** Site read model 别名：sites.get 返回值不得反向污染 registry truth */
+export const zombieSiteOriginAlias: SceneEntry = {
+  async mount(ctx) {
+    const world = ctx.world
+    const cached = world.sites.get('site-compliance-a')
+    const baseline = cached?.origin.heightMeters
+    return {
+      unmount() {
+        if (cached) {
+          try {
+            ;(cached.origin as { heightMeters: number }).heightMeters = 99_999
+          } catch { /* frozen 亦可 */ }
+        }
+        const reread = world.sites.get('site-compliance-a')
+        const intact =
+          baseline !== undefined && reread?.origin.heightMeters === baseline
+        zombieWriteProbes['site-origin-alias'] = intact ? 'SAFE' : 'POLLUTED'
+      }
+    }
+  }
+}
+
+/** create-after-close：sites.register 必须在 inner create 前拒绝（无瞬时增删/通知） */
+export const zombieSiteRegisterAfterClose: SceneEntry = {
+  async mount(ctx) {
+    const world = ctx.world
+    const baselineCount = world.sites.list().length
+    return {
+      unmount() {
+        try {
+          world.sites.register({
+            id: 'hostile-site',
+            name: 'Zombie',
+            origin: {
+              longitudeDegrees: 0,
+              latitudeDegrees: 0,
+              heightMeters: 0,
+              verticalReference: 'ellipsoid'
+            },
+            bounds: { south: 0, west: 0, north: 1, east: 1 }
+          })
+          zombieWriteProbes['site-register-after-close'] = 'ALLOWED'
+        } catch (error) {
+          const rejected = error instanceof SceneScopeClosedError
+          // 无瞬时副作用：registry 计数不变（create 前 guard）
+          const clean = world.sites.list().length === baselineCount
+          zombieWriteProbes['site-register-after-close'] =
+            rejected && clean ? 'REJECTED' : rejected ? 'DIRTY' : 'OTHER'
+        }
+      }
+    }
+  }
+}

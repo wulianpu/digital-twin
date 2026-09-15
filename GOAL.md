@@ -285,3 +285,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   zombie-selection/world-scope/world-clock/spatial-frame/view-write（探针断言 REJECTED）；
   ⑥新增 scoped-lifecycle.test.ts 9 个用例（含 SceneHost 集成 zombie 用例）。
   验证：typecheck 0 错误、167/167 单测、compliance 24/24、e2e 9/9、lint 干净。
+
+- 2026-09-15 **Issue #5 修复（P0 回归：nested capability / mutable alias / create-before-guard 旁路）**：
+  ①`ctx.world.selection` 复用同一 scoped SelectionApi 实例（host.ts 只 build 一次并注入
+  scopedWorldApi options），两条访问路径生命周期语义完全一致；
+  ②WorldSession copy-on-read：scope（含 entity 嵌套）快照拷贝，修改返回对象不污染
+  World truth；③SelectionState snapshot：current 与 onChange emit 均深拷贝
+  primary/secondary；④SiteRegistry get/list/findContaining 返回克隆（origin/bounds）；
+  ⑤ReferenceFrame 创建时 deep-freeze（createEnuFrame + freezeFrame），registerFrame 存
+  frozen 副本——转换热路径零 clone，内部/外部共享 immutable value；
+  ⑥createTracked helper：7 处同步创建（sites.register/onSessionChanged/onTick/onChange/
+  registerFrame/onActiveFrameChanged/registerVerticalOffset）改为 create 前 assertCanCreate，
+  close 后拒绝不再产生"先真实增删/通知再立即 dispose"的瞬时 zombie 副作用；
+  ⑦hostile fixtures +6（nested-selection/session-scope-alias/selection-current-alias/
+  spatial-frame-alias/site-origin-alias/site-register-after-close，探针断言
+  REJECTED/SAFE/IDENTITY-OK）+ scoped-lifecycle.test.ts +7 用例。
+  验证：pnpm verify 全绿（含 2D-only Gate）、181/181 单测、compliance 31/31。

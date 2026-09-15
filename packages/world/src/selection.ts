@@ -23,22 +23,23 @@ export function createSelectionApi(): SelectionApi {
   let secondary: EntityRef[] = []
   const listeners = new Set<(state: SelectionState) => void>()
 
-  function emit(): void {
-    const snapshot: SelectionState = {
-      get primary() {
-        return primary
-      },
-      get secondary() {
-        return secondary
-      }
-    }
-    for (const cb of listeners) cb(snapshot)
+/** Issue #5：snapshot 与内部 state 脱离别名（copy-on-read）。 */
+function snapshotState(): SelectionState {
+  return {
+    primary: primary ? { ...primary } : undefined,
+    secondary: secondary.map((entity) => ({ ...entity }))
   }
+}
 
-  const api: SelectionApi = {
-    get current() {
-      return { primary, secondary: secondary }
-    },
+function emit(): void {
+  const snapshot = snapshotState()
+  for (const cb of listeners) cb(snapshot)
+}
+
+const api: SelectionApi = {
+  get current() {
+    return snapshotState()
+  },
     setPrimary(entity) {
       if (
         primary === entity ||

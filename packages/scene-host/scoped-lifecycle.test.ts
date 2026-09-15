@@ -250,3 +250,164 @@ describe('SceneHost × scoped lifecycle 集成（缓存引用 zombie 写防线�
     expect(mount.state).toBe('active')
   })
 })
+
+describe('Issue #5：nested capability / mutable alias / create-before-guard', () => {
+  it('A: ctx.world.selection 与 ctx.selection 是同一 scoped 实例', async () => {
+    const world = createWorldApi()
+    const selection = createSelectionApi()
+    const services = {
+      world,
+      spatial: createSpatialApi(),
+      data: { subscribe: () => ({ dispose: () => {} }) },
+      selection,
+      view: makeViewInner().view,
+      assets: {}
+    } as unknown as SceneHostOptions['services']
+    const host = new SceneHost({
+      viewport: { ui: document.createElement('div') },
+      services
+    })
+    let nested: unknown
+    let primaryPath: unknown
+    const mount = await host.mount({
+      mount: async (ctx) => {
+        nested = ctx.world.selection
+        primaryPath = ctx.selection
+        return { unmount: () => {} }
+      }
+    })
+    expect(nested).toBe(primaryPath)
+    await mount.unmount()
+    // 两条访问路径生命周期语义一致：同样被拒
+    expect(() =>
+      (nested as SceneContext['selection']).setPrimary({ namespace: 'v', id: 'zombie' })
+    ).toThrow(SceneScopeClosedError)
+    expect(selection.current.primary).toBeUndefined()
+  })
+
+  it('B1: session.scope/entity 是快照——修改返回对象不影响 inner', () => {
+    const scope = new MountScope()
+    const world = createWorldApi({ initialScope: { kind: 'site', siteId: 's1' } })
+    const scoped = scopedWorldApi(world, scope)
+    const snap = scoped.session
+    if (snap.scope.kind === 'site') snap.scope.siteId = 'hijacked'
+    expect(world.session.scope).toEqual({ kind: 'site', siteId: 's1' })
+
+    world.setScope({ kind: 'entity', entity: { namespace: 'vessel', id: 'a' } })
+    const snap2 = scoped.session
+    if (snap2.scope.kind === 'entity') snap2.scope.entity.id = 'zombie'
+    expect(world.session.scope).toEqual({
+      kind: 'entity',
+      entity: { namespace: 'vessel', id: 'a' }
+    })
+  })
+
+  it('B2: selection.current 是快照——修改 primary/secondary 不影响 inner', () => {
+    const scope = new MountScope()
+    const selection = createSelectionApi()
+    const scoped = scopedSelectionApi(selection, scope)
+    scoped.setPrimary({ namespace: 'vessel', id: 'keep' })
+    scoped.setSecondary([{ namespace: 'agv', id: 's1' }])
+    const snap = scoped.current
+    snap.primary!.id = 'zombie'
+    snap.secondary[0]!.id = 'zombie'
+    expect(selection.current.primary).toEqual({ namespace: 'vessel', id: 'keep' })
+    expect(selection.current.secondary).toEqual([{ namespace: 'agv', id: 's1' }])
+    expect(selection.isSelected({ namespace: 'vessel', id: 'keep' })).toBe(true)
+  })
+
+  it('B3: sites.get/list 返回克隆——修改不影响 registry truth', () => {
+    const scope = new MountScope()
+    const world = createWorldApi()
+    const scoped = scopedWorldApi(world, scope)
+    scoped.sites.register({
+      id: 'site-a',
+      name: 'A',
+      origin: { ...GEO },
+      bounds: { south: 1, west: 1, north: 2, east: 2 }
+    })
+    const site = scoped.sites.get('site-a')!
+    site.origin.heightMeters = 99_999
+    ;(site as { name: string }).name = 'Hijacked'
+    expect(world.sites.get('site-a')!.origin.heightMeters).toBe(GEO.heightMeters)
+    expect(world.sites.get('site-a')!.name).toBe('A')
+    const listed = scoped.sites.list()[0]!
+    ;(listed.bounds as { south: number }).south = -50
+    expect(world.sites.list()[0]!.bounds.south).toBe(1)
+  })
+
+  it('B4: frame 冻结——getFrame/ensureEnuFrame 返回值不可变，registerFrame 存副本', () => {
+    const scope = new MountScope()
+    const spatial = createSpatialApi()
+    const scoped = scopedSpatialApi(spatial, scope)
+    const ensured = scoped.ensureEnuFrame('f1', GEO)
+    const baselineX = ensured.originECEF.x
+    expect(() => { (ensured.originECEF as { x: number }).x = 0 }).toThrow(TypeError)
+    expect(() => { (ensured.basisECEF as { xx: number }).xx = 0 }).toThrow(TypeError)
+
+    const callerFrame = {
+      id: 'f2',
+      originECEF: { x: 1, y: 2, z: 3 },
+      basisECEF: { xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1 }
+    } as never
+    scoped.registerFrame(callerFrame)
+    // 调用方对象后续变化不影响 registry（存储的是 frozen 副本）
+    ;(callerFrame as { originECEF: { x: number } }).originECEF.x = 999
+    const stored = scoped.getFrame('f2')!
+    expect(stored).not.toBe(callerFrame)
+    expect(stored.originECEF.x).toBe(1)
+    expect(() => { (stored.originECEF as { x: number }).x = 0 }).toThrow(TypeError)
+    void baselineX
+  })
+
+  it('C: close 后 sites.register 在 inner create 前拒绝（无瞬时增删）', () => {
+    const scope = new MountScope()
+    const world = createWorldApi()
+    const scoped = scopedWorldApi(world, scope)
+    scope.close()
+    expect(() =>
+      scoped.sites.register({
+        id: 'late-site',
+        name: 'Late',
+        origin: { ...GEO },
+        bounds: { south: 1, west: 1, north: 2, east: 2 }
+      })
+    ).toThrow(SceneScopeClosedError)
+    expect(world.sites.get('late-site')).toBeUndefined()
+    expect(world.sites.list().length).toBe(0)
+  })
+
+  it('C: close 后 onSessionChanged/onTick/onChange 在 inner create 前拒绝', () => {
+    const scope = new MountScope()
+    const world = createWorldApi()
+    const selection = createSelectionApi()
+    const spatial = createSpatialApi()
+    const scopedWorld = scopedWorldApi(world, scope)
+    const scopedSelection = scopedSelectionApi(selection, scope)
+    const scopedSpatial = scopedSpatialApi(spatial, scope)
+    scope.close()
+
+    let sessionEvents = 0
+    let tickEvents = 0
+    let selectionEvents = 0
+    let frameEvents = 0
+    expect(() => scopedWorld.onSessionChanged(() => sessionEvents++)).toThrow(
+      SceneScopeClosedError
+    )
+    expect(() => scopedWorld.time.onTick(() => tickEvents++)).toThrow(SceneScopeClosedError)
+    expect(() => scopedSelection.onChange(() => selectionEvents++)).toThrow(
+      SceneScopeClosedError
+    )
+    expect(() => scopedSpatial.onActiveFrameChanged(() => frameEvents++)).toThrow(
+      SceneScopeClosedError
+    )
+    // listener 从未注册：inner 状态变化不触发任何回调
+    world.setMode('history')
+    selection.setPrimary({ namespace: 'v', id: 'x' })
+    spatial.setActiveFrame(undefined)
+    expect(sessionEvents).toBe(0)
+    expect(tickEvents).toBe(0)
+    expect(selectionEvents).toBe(0)
+    expect(frameEvents).toBe(0)
+  })
+})

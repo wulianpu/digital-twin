@@ -19,6 +19,9 @@ import type {
 /**
  * Site Reference Frame (§37.3): X = East, Y = Up, Z = -North.
  * Right-handed; physics / navigation / kinematics all run in this frame.
+ *
+ * Issue #5：frame 是共享空间事实——构造时一次性 deep-freeze，
+ * 内部与外部共享同一 immutable value（转换热路径不做 clone）。
  */
 export function createEnuFrame(
   id: ReferenceFrameId,
@@ -36,11 +39,19 @@ export function createEnuFrame(
   // Z = -North
   const minusNorth = vec3(-north.x, -north.y, -north.z)
   const basisECEF: Mat3d = mat3FromColumns(east, up, minusNorth)
-  return {
+  return freezeFrame({
     id,
     originECEF: { x: originEcef.xMeters, y: originEcef.yMeters, z: originEcef.zMeters },
     basisECEF
-  }
+  })
+}
+
+/** 冻结 frame 及其向量/矩阵（防止调用方反向污染共享空间事实）。 */
+export function freezeFrame(frame: ReferenceFrame): ReferenceFrame {
+  Object.freeze(frame.originECEF)
+  Object.freeze(frame.basisECEF)
+  Object.freeze(frame)
+  return frame
 }
 
 /** frame-local meters -> ECEF meters. */

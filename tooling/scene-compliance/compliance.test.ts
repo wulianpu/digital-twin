@@ -172,6 +172,66 @@ describe('Hostile scene compliance: 非 Engine capability 生命周期隔离（I
   )
 })
 
+describe('Hostile scene compliance: alias 旁路与 create-before-guard（Issue #5）', () => {
+  const ALIAS_FIXTURES: Array<{ id: string; key: string; expected: string; load: () => Promise<unknown> }> = [
+    {
+      id: 'hostile:zombie-world-nested-selection',
+      key: 'nested-selection',
+      expected: 'REJECTED',
+      load: () => import('./fixtures/hostile-scenes').then(m => m.zombieWorldNestedSelection)
+    },
+    {
+      id: 'hostile:zombie-world-session-scope-alias',
+      key: 'session-scope-alias',
+      expected: 'SAFE',
+      load: () => import('./fixtures/hostile-scenes').then(m => m.zombieWorldSessionScopeAlias)
+    },
+    {
+      id: 'hostile:zombie-selection-current-alias',
+      key: 'selection-current-alias',
+      expected: 'SAFE',
+      load: () => import('./fixtures/hostile-scenes').then(m => m.zombieSelectionCurrentAlias)
+    },
+    {
+      id: 'hostile:zombie-spatial-frame-alias',
+      key: 'spatial-frame-alias',
+      expected: 'SAFE',
+      load: () => import('./fixtures/hostile-scenes').then(m => m.zombieSpatialFrameAlias)
+    },
+    {
+      id: 'hostile:zombie-site-origin-alias',
+      key: 'site-origin-alias',
+      expected: 'SAFE',
+      load: () => import('./fixtures/hostile-scenes').then(m => m.zombieSiteOriginAlias)
+    },
+    {
+      id: 'hostile:zombie-site-register-after-close',
+      key: 'site-register-after-close',
+      expected: 'REJECTED',
+      load: () => import('./fixtures/hostile-scenes').then(m => m.zombieSiteRegisterAfterClose)
+    }
+  ]
+
+  it.each(ALIAS_FIXTURES.map(f => [f.id, f.key, f.expected, f.load] as const))(
+    '%s',
+    async (sceneId, key, expected, load) => {
+      const report = await runComplianceCycles(sceneId, load, { cycles: 2, framesPerCycle: 5 })
+      expect(report.errors).toEqual([])
+      expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
+      expect(zombieWriteProbes[key]).toBe(expected)
+    },
+    15_000
+  )
+
+  it('ctx.world.selection 与 ctx.selection 为同一 scoped 实例（无语义分叉）', async () => {
+    await runComplianceCycles('hostile:nested-selection-identity', () =>
+      import('./fixtures/hostile-scenes').then(m => m.zombieWorldNestedSelection),
+      { cycles: 1, framesPerCycle: 2 }
+    )
+    expect(zombieWriteProbes['nested-selection-identity']).toBe('IDENTITY-OK')
+  }, 15_000)
+})
+
 describe('Gate #2: production 2D ↔ 3D toggle ×100', () => {
   it('toggles 100 times with the scene mounted once', async () => {
     const result = await runToggleStress('production', () => import('@twin/scene-production'), 100)

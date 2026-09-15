@@ -30,11 +30,18 @@ function assertWrite(scope: MountScope, what: string): void {
   scope.assertActive(what)
 }
 
-/** Disposable 建立即登记，Host 兜底释放；Scene 手工 dispose 仍保留。 */
-function trackDisposable<T extends { dispose(): void }>(
-  create: () => T,
-  scope: MountScope
+/**
+ * 同步资源创建：先 assertCanCreate 再执行 inner create（Issue #5-C）。
+ * closing/disposed 后在 inner create **之前**拒绝——杜绝
+ * "先真实增删/发射通知、再立即 dispose" 的瞬时 zombie 副作用。
+ * （异步迟到 resolve 的兜底回收是另一语义，见 scoped.ts 的 track。）
+ */
+function createTracked<T extends { dispose(): void }>(
+  scope: MountScope,
+  what: string,
+  create: () => T
 ): T {
+  scope.assertCanCreate(what)
   return scope.track(create()) as T
 }
 
@@ -65,24 +72,30 @@ function scopedSites(inner: SiteRegistryApi, scope: MountScope): SiteRegistryApi
     get: (id) => inner.get(id),
     list: () => inner.list(),
     findContaining: (bounds) => inner.findContaining(bounds),
-    register: (site) => trackDisposable(() => inner.register(site), scope)
+    register: (site) => createTracked(scope, 'world.sites.register', () => inner.register(site))
   }
 }
 
 function scopedTime(inner: WorldTimeApi, scope: MountScope): WorldTimeApi {
   return {
     now: () => inner.now(),
-    onTick: (cb) => trackDisposable(() => inner.onTick(cb), scope)
+    onTick: (cb) => createTracked(scope, 'world.time.onTick', () => inner.onTick(cb))
   }
 }
 
-export function scopedWorldApi(inner: WorldApi, scope: MountScope): WorldApi {
+export function scopedWorldApi(
+  inner: WorldApi,
+  scope: MountScope,
+  options: { selection?: SelectionApi } = {}
+): WorldApi {
   return {
     get worldId() { return inner.worldId },
     get session() { return inner.session },
     get sites() { return scopedSites(inner.sites, scope) },
     get time() { return scopedTime(inner.time, scope) },
-    get selection() { return inner.selection },
+    // Issue #5-A：复用同一 scoped SelectionApi——ctx.world.selection 与
+    // ctx.selection 生命周期语义完全一致（同一实例）
+    get selection() { return options.selection ?? scopedSelectionApi(inner.selection, scope) },
     get clock() { return scopedClock(inner.clock, scope) },
     setMode: (mode) => {
       assertWrite(scope, 'world.setMode')
@@ -92,7 +105,8 @@ export function scopedWorldApi(inner: WorldApi, scope: MountScope): WorldApi {
       assertWrite(scope, 'world.setScope')
       inner.setScope(s)
     },
-    onSessionChanged: (cb) => trackDisposable(() => inner.onSessionChanged(cb), scope)
+    onSessionChanged: (cb) =>
+      createTracked(scope, 'world.onSessionChanged', () => inner.onSessionChanged(cb))
   }
 }
 
@@ -101,12 +115,10 @@ export function scopedSpatialApi(inner: SpatialApi, scope: MountScope): SpatialA
     get activeFrameId() { return inner.activeFrameId },
     listFrames: () => inner.listFrames(),
     getFrame: (id) => inner.getFrame(id),
-    registerFrame: (frame) => {
-      assertWrite(scope, 'spatial.registerFrame')
-      return trackDisposable(() => inner.registerFrame(frame), scope)
-    },
+    registerFrame: (frame) =>
+      createTracked(scope, 'spatial.registerFrame', () => inner.registerFrame(frame)),
     ensureEnuFrame: (id, origin) => {
-      assertWrite(scope, 'spatial.ensureEnuFrame')
+      scope.assertCanCreate('spatial.ensureEnuFrame')
       return inner.ensureEnuFrame(id, origin)
     },
     setActiveFrame: (id) => {
@@ -114,15 +126,15 @@ export function scopedSpatialApi(inner: SpatialApi, scope: MountScope): SpatialA
       inner.setActiveFrame(id)
     },
     onActiveFrameChanged: (cb) =>
-      trackDisposable(() => inner.onActiveFrameChanged(cb), scope),
+      createTracked(scope, 'spatial.onActiveFrameChanged', () => inner.onActiveFrameChanged(cb)),
     geodeticToLocal: (p) => inner.geodeticToLocal(p),
     localToGeodetic: (v) => inner.localToGeodetic(v),
     ecefToLocal: (e) => inner.ecefToLocal(e),
     localToEcef: (v) => inner.localToEcef(v),
-    registerVerticalOffset: (from, to, meters) => {
-      assertWrite(scope, 'spatial.registerVerticalOffset')
-      return trackDisposable(() => inner.registerVerticalOffset(from, to, meters), scope)
-    },
+    registerVerticalOffset: (from, to, meters) =>
+      createTracked(scope, 'spatial.registerVerticalOffset', () =>
+        inner.registerVerticalOffset(from, to, meters)
+      ),
     toEllipsoidal: (p) => inner.toEllipsoidal(p)
   }
 }
@@ -147,7 +159,7 @@ export function scopedSelectionApi(inner: SelectionApi, scope: MountScope): Sele
       inner.clear()
     },
     isSelected: (entity) => inner.isSelected(entity),
-    onChange: (cb) => trackDisposable(() => inner.onChange(cb), scope)
+    onChange: (cb) => createTracked(scope, 'selection.onChange', () => inner.onChange(cb))
   }
 }
 

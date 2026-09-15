@@ -236,16 +236,19 @@ class HostMountImpl implements HostMount {
 
   private buildContext(): SceneContext {
     const services = this.options.services
+    // Issue #5-A：selection 只 scoped 一次——ctx.selection 与
+    // ctx.world.selection 是同一实例，两条访问路径生命周期语义一致
+    const selection = scopedSelectionApi(services.selection, this.scope)
     this.revocable = createRevocableContext(
       this.sceneId,
       {
         // I10-1: 全部 capability 经 scoped wrapper 注入——
-        // scope dispose 后写操作变为 no-op，防止 zombie write
-        world: scopedWorldApi(services.world, this.scope),
+        // scope dispose 后写操作被拒，防止 zombie write
+        world: scopedWorldApi(services.world, this.scope, { selection }),
         spatial: scopedSpatialApi(services.spatial, this.scope),
         data: scopedDataApi(services.data, this.scope),
         assets: scopedAssetApi(services.assets, this.scope),
-        selection: scopedSelectionApi(services.selection, this.scope),
+        selection,
         view: scopedViewApi(services.view, this.scope),
         ui: scopedUiApi(this.ui, this.scope),
         map: services.map ? scopedMapAccess(services.map, this.scope) : undefined,

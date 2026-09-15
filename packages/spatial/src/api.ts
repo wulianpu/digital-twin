@@ -2,6 +2,7 @@ import { VerticalDatumRegistry } from './datum'
 import {
   createEnuFrame,
   ecefToFrameLocal,
+  freezeFrame,
   frameLocalToEcef,
   frameLocalToGeodetic,
   geodeticToFrameLocal
@@ -57,7 +58,13 @@ export function createSpatialApi(): SpatialApi {
     listFrames: () => [...frames.values()],
     getFrame: (id) => frames.get(id),
     registerFrame(frame) {
-      frames.set(frame.id, frame)
+      // Issue #5：registry 存 frozen 深拷贝——调用方对象后续变化不影响空间事实
+      const stored = freezeFrame({
+        id: frame.id,
+        originECEF: { ...frame.originECEF },
+        basisECEF: { ...frame.basisECEF }
+      })
+      frames.set(frame.id, stored)
       return {
         dispose: () => {
           frames.delete(frame.id)

@@ -46,6 +46,23 @@ export interface CreateWorldOptions {
   selection?: SelectionApi
 }
 
+/** Issue #5：read model 与内部 state 脱离别名（copy-on-read snapshot）。 */
+function snapshotScope(scope: WorldScope): WorldScope {
+  if (scope.kind === 'entity') {
+    return { kind: 'entity', entity: { ...scope.entity } }
+  }
+  return { ...scope }
+}
+
+/** Site 是低频稳定 read model：浅拷贝嵌套几何即可切断别名。 */
+function snapshotSite(site: Site): Site {
+  return {
+    ...site,
+    origin: { ...site.origin },
+    bounds: { ...site.bounds }
+  }
+}
+
 /** The one logical digital world. Scope/Mode are views onto it (§29-30). */
 export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
   const worldId = options.worldId ?? 'world-main'
@@ -67,7 +84,9 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
     return {
       worldId,
       mode,
-      scope,
+      // Issue #5：snapshot 必须与内部 state 脱离别名——
+      // 调用方修改返回的 scope/entity 不得反向污染 World truth
+      scope: snapshotScope(scope),
       time: clock.now()
     }
   }
@@ -78,8 +97,11 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
   }
 
   const siteRegistry: SiteRegistryApi = {
-    get: (id) => sites.get(id),
-    list: () => [...sites.values()],
+    get: (id) => {
+      const site = sites.get(id)
+      return site ? snapshotSite(site) : undefined
+    },
+    list: () => [...sites.values()].map(snapshotSite),
     findContaining(bounds) {
       for (const site of sites.values()) {
         const b = site.bounds
@@ -89,7 +111,7 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
           bounds.west >= b.west &&
           bounds.east <= b.east
         ) {
-          return site
+          return snapshotSite(site)
         }
       }
       return undefined
