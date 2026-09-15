@@ -354,3 +354,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④单测 +5（scene-owned duplicate / registerFrame-owned 误判 / ensure 提升拒绝 /
   app-owned borrow 保持 / active frame invariant）。
   验证：pnpm verify 全绿、214/214 单测、compliance 40/40。
+
+- 2026-09-15 **Issue #3 二次复审修复（P0：Last Selection Wins 异步生命周期竞态闭环）**：
+  ①Coordinator 统一提交门：新增 isCurrent() helper，每个 await 之后、每次
+  commit/onError 之前都 re-check generation——覆盖 target load 成功/失败、
+  host.unmount、target mount 成功/失败、rollback load/mount 成功/失败全部 8 个路径；
+  stale rejection 静默丢弃（不得把 C 的 ACTIVE 覆盖为 ERROR(B)）；
+  ②stale 但已成功创建的 mount（target 或 rollback prevMount）先 unmount 再丢弃，
+  绝不 commit；
+  ③loadControllers 按 controller identity 清理（get 比对后再 delete），
+  stale generation 不得误删同 sceneId 新 generation 的 controller；
+  ④HostMountImpl 防复活：teardown 先于 entry.mount resolve 时，迟到 SceneMount
+  做 best-effort 一次性回收（cleanup 抛错走 onError('host-cleanup')），
+  状态不得从 unmounted 复活为 active，context 保持 revoked，
+  host.mount 以 SceneUnmountedError reject；
+  ⑤deferred Promise 确定性竞态测试 +7（load/mount/rollback 三路径成功与失败、
+  controller identity、host 复活防线 ×2）。
+  验证：pnpm verify 全绿、221/221 单测、compliance 40/40、e2e 9/9。

@@ -1,4 +1,5 @@
 import type { SceneContext, SceneEntry, SceneId, SceneMount } from '@twin/sdk'
+import { SceneUnmountedError } from '@twin/sdk'
 import type { Disposable } from '@twin/world'
 import { UiApiImpl } from './ui'
 import { MountScope } from './scope'
@@ -151,7 +152,19 @@ class HostMountImpl implements HostMount {
   async start(): Promise<void> {
     const context = this.buildContext()
     try {
-      this.mountImpl = await this.entry.mount(context)
+      const mountImpl = await this.entry.mount(context)
+      // 问题4-4（#3 复审）：teardown 赢得竞态后，late resolve 不得把
+      // unmounted 复活成 active——迟到的 SceneMount 做 best-effort
+      // 一次性回收，context 保持 revoked，并向调用方 reject。
+      if (this.state !== 'mounting') {
+        try {
+          await mountImpl.unmount()
+        } catch (cleanupError) {
+          this.onError?.(cleanupError, 'host-cleanup')
+        }
+        throw new SceneUnmountedError(this.sceneId, 'mount')
+      }
+      this.mountImpl = mountImpl
       this.state = 'active'
     } catch (error) {
       this.mutableResult.errors.push(error)

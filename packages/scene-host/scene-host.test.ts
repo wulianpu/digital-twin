@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { SceneHost, createViewService, type SceneHostOptions } from './src/public'
+import type { SceneMount } from '@twin/sdk'
 import { SceneUnmountedError, type SceneContext, type SceneEntry } from '@twin/sdk'
 
 function makeServices(): SceneHostOptions['services'] & { data: unknown } {
@@ -200,5 +201,60 @@ describe('ViewService', () => {
     primary = 'scene'
     await view.goToSite('site-a')
     expect(scene.goToSite).toHaveBeenCalledWith('site-a')
+  })
+})
+
+describe('HostMount late-resolve 复活防线（#3 复审）', () => {
+  function deferredMount() {
+    let resolve!: (value: SceneMount) => void
+    const promise = new Promise<SceneMount>((res) => {
+      resolve = res
+    })
+    return { promise, resolve }
+  }
+
+  it('teardown 先于 entry.mount resolve：不得 unmounted→active，迟到 SceneMount 一次性回收', async () => {
+    const { host } = makeHost()
+    const { promise, resolve } = deferredMount()
+    const lateUnmount = vi.fn(async () => {})
+
+    const mountPromise = host.mount({ mount: () => promise })
+    // teardown 抢在 mount resolve 之前完成
+    const unmountPromise = host.unmount()
+    await unmountPromise
+    expect(host.isActive).toBe(false)
+
+    // 迟到的 SceneMount：不得复活为 active，且被 best-effort 回收
+    resolve({ unmount: lateUnmount })
+    await expect(mountPromise).rejects.toThrowError(SceneUnmountedError)
+    expect(lateUnmount).toHaveBeenCalledTimes(1)
+    expect(host.activeMount?.state).toBe('unmounted')
+    expect(host.contextState).toBe('revoked')
+
+    // 幂等：后续 unmount 不再触发第二次 cleanup
+    const result = await host.unmount()
+    expect(lateUnmount).toHaveBeenCalledTimes(1)
+    expect(result.timedOut).toBe(false)
+  })
+
+  it('迟到的 SceneMount cleanup 抛错 → onError(host-cleanup)，仍不得复活', async () => {
+    const onError = vi.fn()
+    const { host } = makeHost({ onError })
+    const { promise, resolve } = deferredMount()
+
+    const mountPromise = host.mount({ mount: () => promise })
+    await host.unmount()
+
+    resolve({
+      unmount: () => {
+        throw new Error('late cleanup exploded')
+      }
+    })
+    await expect(mountPromise).rejects.toThrowError(SceneUnmountedError)
+    expect(onError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'host-cleanup'
+    )
+    expect(host.activeMount?.state).toBe('unmounted')
   })
 })

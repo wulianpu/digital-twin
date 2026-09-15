@@ -86,10 +86,20 @@ export class SceneCoordinator {
 
     // Last selection wins: invalidate every pending switch (§11).
     const generation = ++this.generation
+    // 问题4-3（#3 复审）：generation 是 stale-result suppression 的唯一
+    // commit authority——每个 await 之后、每次 commit/onError 之前都要重查。
+    const isCurrent = (): boolean => generation === this.generation
     for (const controller of this.loadControllers.values()) controller.abort()
     this.loadControllers.clear()
     const loadController = new AbortController()
     this.loadControllers.set(sceneId, loadController)
+    // 问题4-2：按 controller identity 清理——stale generation 不得误删
+    // 同 sceneId 后续 generation 创建的新 controller。
+    const releaseLoadController = (): void => {
+      if (this.loadControllers.get(sceneId) === loadController) {
+        this.loadControllers.delete(sceneId)
+      }
+    }
 
     // 问题4：previous snapshot 必须在 setState(loading) **之前**保存——
     // setState 之后 _state.kind 变为 'loading'，previous 永远取不到
@@ -103,10 +113,13 @@ export class SceneCoordinator {
     let entry
     try {
       entry = await definition.load()
-      if (generation !== this.generation) return // superseded
+      if (!isCurrent()) {
+        releaseLoadController()
+        return // superseded success：丢弃，不得 commit
+      }
     } catch (loadError) {
-      // load 失败（dynamic import/网络）：无副作用产生，直接 ERROR
-      this.loadControllers.delete(sceneId)
+      releaseLoadController()
+      if (!isCurrent()) return // stale rejection：不得覆盖更新的 Scene 状态
       this.options.onError?.(loadError, sceneId)
       this.setState({ kind: 'error', sceneId, error: loadError })
       return
@@ -114,7 +127,10 @@ export class SceneCoordinator {
 
     // UNMOUNT CURRENT → MOUNT TARGET (host enforces §12 teardown rules).
     await this.host.unmount()
-    if (generation !== this.generation) return
+    if (!isCurrent()) {
+      releaseLoadController()
+      return
+    }
 
     let mount: HostMount
     try {
@@ -122,37 +138,50 @@ export class SceneCoordinator {
       if (mount.state !== 'active') {
         throw new Error(`scene "${sceneId}" did not reach active state`)
       }
-      if (generation !== this.generation) {
-        await mount.unmount()
+      if (!isCurrent()) {
+        // stale success：已创建的 mount 必须先 teardown 再丢弃，绝不 commit
+        await mount.unmount().catch(() => {})
+        releaseLoadController()
         return
       }
     } catch (mountError) {
+      releaseLoadController()
+      if (!isCurrent()) return // stale rejection：不得覆盖 C 的 ACTIVE
       // 问题4：真回滚——目标 mount 失败后尝试恢复 previous scene；
       // Last Selection Wins：generation 变化时过期回滚不得执行。
-      if (previous && generation === this.generation) {
+      if (previous) {
         try {
           const prevEntry = await previous.definition.load()
+          if (!isCurrent()) return
           const prevMount = await this.host.mount(prevEntry, {
             sceneId: previous.sceneId
           })
-          this.loadControllers.delete(sceneId)
+          if (prevMount.state !== 'active') {
+            throw new Error(
+              `previous scene "${previous.sceneId}" did not reach active state`
+            )
+          }
+          if (!isCurrent()) {
+            // 过期回滚的 mount 已创建：先 teardown 再丢弃，绝不覆盖 C
+            await prevMount.unmount().catch(() => {})
+            return
+          }
           this.setState({ kind: 'active', sceneId: previous.sceneId, mount: prevMount })
           this.options.onError?.(mountError, sceneId)
           return
         } catch (rollbackError) {
-          this.loadControllers.delete(sceneId)
+          if (!isCurrent()) return
           this.options.onError?.(rollbackError, previous.sceneId)
           this.setState({ kind: 'error', sceneId, error: rollbackError })
           return
         }
       }
-      this.loadControllers.delete(sceneId)
       this.options.onError?.(mountError, sceneId)
       this.setState({ kind: 'error', sceneId, error: mountError })
       return
     }
 
-    this.loadControllers.delete(sceneId)
+    releaseLoadController()
     this.setState({ kind: 'active', sceneId, mount })
   }
 
