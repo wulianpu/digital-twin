@@ -262,40 +262,63 @@ export class SceneCoordinator {
   }
 
   /**
-   * stale-after-destructive-unmount 的补偿语义（#10-r2-B）：
+   * stale-after-destructive-unmount 的补偿语义（#10-r2/#10-r3）：
    * - 最新 intent 会 mount → 交接给它；
    * - 最新 intent 是 noop（denied / same-scene re-select）→ 恢复 previous
    *   运行，保证"denied 不改变当前场景"在任何交错下成立。
-   * 提交前再次检查最新 intent，veto 时卸掉补偿 mount。
+   *
+   * #10-r3（三次复审）：reconcile 必须绑定创建时的 intent/generation
+   * identity——`stillNeededFor(serving)` 在**每个 await 之后、每次
+   * destructive `host.mount` 之前**重新校验；veto 后按最新 intent
+   * 重新评估（noop → 为新 generation 重跑一轮；mount → 退出交接）。
+   * 这杜绝"旧补偿 load 晚到后 teardown 最新已 commit Scene"的竞态。
    */
   private reconcileAfterUnmount(
     previous: { definition: SceneDefinition; sceneId: SceneId } | undefined
   ): Promise<void> {
+    const stillNeededFor = (serving: number): boolean =>
+      this.generation === serving && this.latestIntent.kind === 'noop'
     const run = async (): Promise<void> => {
-      if (!previous || this.newestIntentWillMount()) return
-      try {
-        const entry = await previous.definition.load()
-        const mount = await this.host.mount(entry, { sceneId: previous.sceneId })
-        if (mount.state !== 'active') {
-          throw new Error(
-            `previous scene "${previous.sceneId}" did not reach active state`
-          )
-        }
-        if (this.newestIntentWillMount()) {
-          await mount.unmount().catch(() => {})
+      while (true) {
+        if (!previous || this.newestIntentWillMount()) return
+        const serving = this.generation
+        if (!stillNeededFor(serving)) continue // 新 generation 已到来，重估
+        try {
+          const entry = await previous.definition.load()
+          if (!stillNeededFor(serving)) {
+            // 关键缺口（#10-r3）：补偿 load 晚到期间出现新选择——
+            // mount intent → 立即退出（绝不 teardown 最新 Scene）；
+            // noop intent → 为新 generation 重跑一轮
+            if (this.newestIntentWillMount()) return
+            continue
+          }
+          const mount = await this.host.mount(entry, { sceneId: previous.sceneId })
+          if (mount.state !== 'active') {
+            throw new Error(
+              `previous scene "${previous.sceneId}" did not reach active state`
+            )
+          }
+          if (!stillNeededFor(serving)) {
+            // host.mount 期间出现新 intent：补偿 mount 是本路径创建的，
+            // 由本路径回收；mount intent → 交接；noop → 重跑一轮
+            await mount.unmount().catch(() => {})
+            if (this.newestIntentWillMount()) return
+            continue
+          }
+          this.active = {
+            definition: previous.definition,
+            sceneId: previous.sceneId,
+            mount
+          }
+          this.setState({ kind: 'active', sceneId: previous.sceneId, mount })
           return
-        }
-        this.active = {
-          definition: previous.definition,
-          sceneId: previous.sceneId,
-          mount
-        }
-        this.setState({ kind: 'active', sceneId: previous.sceneId, mount })
-      } catch (error) {
-        this.clearActiveIf(undefined)
-        this.active = undefined
-        if (!this.newestIntentWillMount()) {
+        } catch (error) {
+          // 仅当本补偿仍服务于最新 noop intent 时才清除 ownership /
+          // 上报错误——不得wipe更新的 mount 事务（如 D）的 active 真值
+          if (!stillNeededFor(serving)) return
+          this.active = undefined
           this.options.onError?.(error, previous.sceneId)
+          return
         }
       }
     }

@@ -400,3 +400,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④deferred 测试 +4（重选恢复 / unmount-pending denied 补偿 / 双失败重试 /
   **真实 SceneHost** 集成——Coordinator ownership 与 Host activeMount 全程一致）。
   验证：pnpm verify 全绿、229/229 单测、compliance 40/40、e2e 9/9。
+
+- 2026-09-15 **Issue #10 三次复审修复（P1：reconcile 缺少 intent/generation identity）**：
+  ①reconcile 绑定 serving generation——`stillNeededFor(serving)`（generation 相同
+  且最新 intent 为 noop）在**每个 await 之后、每次 destructive host.mount 之前**
+  重新校验，杜绝"旧补偿 load 晚到后 host.mount(A) teardown 最新已 commit Scene"
+  的竞态（含 D mount pending 场景：stale reconcile 不得触发 host.mount(A) 取消 D）；
+  ②veto 后按最新 intent 重估：noop → 为新 generation 重跑一轮补偿（reconcile
+  循环串行化）；mount → 立即退出交接；catch 路径仅在仍服务最新 noop intent 时
+  才清 ownership/上报，不得 wipe 更新事务的 active 真值；
+  ③真实 SceneHost 竞态测试 +3（D 已 commit / D mount pending / 连续 noop intent
+  重跑恢复）。
+  验证：pnpm verify 全绿、232/232 单测、compliance 40/40、e2e 9/9。
