@@ -43,7 +43,7 @@ export function createGraphicsAccess(
   // 失败可重试（reject 只清本 attempt 的 pending slot）；
   // dispose 后 DISPOSED 永不复活，late runtime exactly-once 回收。
   let generation = 0
-  let bootAttempt: { generation: number; promise: Promise<BootedGraphicsContext> } | undefined
+  let bootAttempt: { generation: number; promise: Promise<EngineRuntime> } | undefined
 
   async function boot(attempt: number): Promise<EngineRuntime> {
     try {
@@ -82,6 +82,19 @@ export function createGraphicsAccess(
     return new Error('[scene-engine] boot attempt aborted (access disposed)')
   }
 
+  async function fromAttempt(
+    attempt: { generation: number; promise: Promise<EngineRuntime> }
+  ): Promise<BootedGraphicsContext> {
+    const rt = await attempt.promise
+    // await 后重校验 terminal / generation authority
+    if (disposed || attempt.generation !== generation) {
+      throw abortedError()
+    }
+    // 每次 use() 分配新的 mount-owned root
+    const mount = rt.createMountRoot()
+    return { ...rt.context, root: mount.root }
+  }
+
   const access: GraphicsAccess = {
     get state() {
       return state
@@ -95,21 +108,21 @@ export function createGraphicsAccess(
    * Scene unmount/throw/timeout 时宿主可无条件 detach 该 mount root。
    * 其余能力（camera/renderer/environment/entities）为引擎级共享。
    */
-  use() {
+  use(): Promise<BootedGraphicsContext> {
     if (disposed || state === 'DISPOSED') {
       return Promise.reject(new Error('[scene-engine] access disposed'))
     }
-    // 同 generation 内并发 use() 共享同一次 boot attempt
-    if (bootAttempt && bootAttempt.generation === generation) {
-      return bootAttempt.promise
+    // #14：同 generation 内并发 use() 共享同一次 **runtime boot**（single-flight）
+    let attempt = bootAttempt
+    if (!attempt || attempt.generation !== generation) {
+      const gen = ++generation
+      attempt = { generation: gen, promise: boot(gen) }
+      bootAttempt = attempt
     }
-    const attempt = ++generation
-    const promise = boot(attempt).then((rt) => {
-      const mount = rt.createMountRoot()
-      return { ...rt.context, root: mount.root }
-    })
-    bootAttempt = { generation: attempt, promise }
-    return promise
+    // #14-r2（复审）：single-flight 只针对 EngineRuntime——
+    // SceneMountRoot 是 **per-use / per-SceneMount 独占**资源（§25），
+    // 每次 use() 成功后都分配全新 root，绝不共享 BootedGraphicsContext。
+    return fromAttempt(attempt)
   },
     applyQuality(profile: QualityProfile) {
       runtimes.get(access)?.adaptive.force(profile)

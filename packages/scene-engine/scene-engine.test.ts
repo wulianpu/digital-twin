@@ -728,3 +728,56 @@ describe('callback fault boundary（Issue #15）', () => {
     errorSpy.mockRestore()
   })
 })
+
+/** ------- Issue #14-r2（复审）：runtime single-flight ≠ root single-flight */
+
+describe('GraphicsAccess per-use mount root（#14-r2 回归）', () => {
+  function makeRootSpyFactory() {
+    const createMountRoot = vi.fn(() => ({ root: {}, detach: () => {} }))
+    const { createRuntime, runtimes } = makeRuntimeFactory()
+    // 注入带 root-spy 的 runtime
+    const create = vi.fn(async (): Promise<EngineRuntime> => {
+      const rt = (await createRuntime()) as unknown as EngineRuntime & {
+        createMountRoot: typeof createMountRoot
+      }
+      ;(rt as unknown as { createMountRoot: typeof createMountRoot }).createMountRoot =
+        createMountRoot
+      return rt
+    })
+    return { create, createMountRoot, runtimes }
+  }
+
+  it('顺序 use()：runtime single-flight 保持，root 每次全新分配', async () => {
+    const { create, createMountRoot, runtimes } = makeRootSpyFactory()
+    const access = createGraphicsAccess(
+      { getViewport: () => document.createElement('div') },
+      { createRuntime: create }
+    )
+    const c1 = await access.use()
+    const c2 = await access.use()
+
+    expect(createMountRoot).toHaveBeenCalledTimes(2) // per-use 分配
+    expect(c1.root).not.toBe(c2.root)
+    expect(runtimes).toHaveLength(1) // runtime 仍 single-flight
+    access.dispose()
+  })
+
+  it('并发 use()：runtime 一次、root 三个（互不共享）', async () => {
+    const { create, createMountRoot, runtimes } = makeRootSpyFactory()
+    const access = createGraphicsAccess(
+      { getViewport: () => document.createElement('div') },
+      { createRuntime: create }
+    )
+    const [c1, c2, c3] = await Promise.all([
+      access.use(),
+      access.use(),
+      access.use()
+    ])
+
+    expect(createMountRoot).toHaveBeenCalledTimes(3)
+    expect(new Set([c1.root, c2.root, c3.root]).size).toBe(3)
+    expect(createMountRoot.mock.instances.length).toBeGreaterThanOrEqual(0)
+    expect(runtimes).toHaveLength(1)
+    access.dispose()
+  })
+})

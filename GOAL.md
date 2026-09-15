@@ -523,3 +523,13 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   seek 之后 source 发出的新帧属于新 epoch 正常投递；
   ④deferred 竞态测试 +3（旧 snapshot 回写 t2 / 旧 epoch 抢占游标 / query 污染）。
   验证：pnpm verify 全绿、268/268 单测、compliance 40/40、e2e 10/10。
+
+- 2026-09-16 **Issue #14 二次复审修复（P0 回归：boot single-flight 被放大成
+  GraphicsContext/SceneMountRoot single-flight）**：①bootAttempt 缓存类型回退为
+  `Promise<EngineRuntime>`（只对 runtime boot single-flight）；use() 改为
+  fromAttempt(attempt)——await 后重校验 terminal/generation，然后**每次 use()
+  都分配全新 mount-owned SceneMountRoot**（§25 per-SceneMount root 不变量恢复）；
+  #14 的 terminal guard（dispose 竞态 exactly-once dispose、不复活 ACTIVE）完整保留；
+  ②回归测试 +2（顺序 use：runtime 1 次/root 2 次且 identity 不同；并发 3 use：
+  runtime 1 次/root 3 次互不共享）——正是复审指出的原测试盲区。
+  验证：pnpm verify 全绿、270/270 单测、compliance 40/40、e2e 10/10。
