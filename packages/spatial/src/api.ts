@@ -18,6 +18,17 @@ import type {
 } from './types'
 
 /**
+ * Registry entry owner kind（Issue #9）：'app' = Composition Root ensure
+ * 的平台级 baseline（可被 registerEnuFrame 借用）；'registration' = 由
+ * registerFrame / registerEnuFrame 创建、绑定 token 生命周期的注册项。
+ */
+interface FrameEntry {
+  readonly owner: 'app' | 'registration'
+  readonly token: object
+  readonly frame: ReferenceFrame
+}
+
+/**
  * Platform semantics for the spatial capability. Implemented WITHOUT any
  * engine dependency; engines adapt on top.
  */
@@ -95,7 +106,10 @@ function sameDefinition(a: ReferenceFrame, b: ReferenceFrame): boolean {
 
 export function createSpatialApi(): SpatialApi {
   // Issue #7：registration identity——disposer 绑定注册身份而非仅绑定 key
-  const frames = new Map<ReferenceFrameId, { token: object; frame: ReferenceFrame }>()
+  // Issue #9：entry 记录 owner kind——'app'（Composition Root ensure）才允许
+  // no-op borrow；'registration'（registerFrame / registerEnuFrame 创建）是
+  // registration-owned，重复注册一律 fail-fast，杜绝伪 borrow lease。
+  const frames = new Map<ReferenceFrameId, FrameEntry>()
   const datum = new VerticalDatumRegistry()
   let activeFrameId: ReferenceFrameId | undefined
   const listeners = new Set<(id: ReferenceFrameId | undefined) => void>()
@@ -118,7 +132,7 @@ export function createSpatialApi(): SpatialApi {
         throw new DuplicateRegistrationError('frame', frame.id)
       }
       const token: object = {}
-      frames.set(frame.id, { token, frame: stored })
+      frames.set(frame.id, { owner: 'registration', token, frame: stored })
       let disposed = false
       return {
         dispose: () => {
@@ -129,19 +143,24 @@ export function createSpatialApi(): SpatialApi {
       }
     },
     registerEnuFrame(id, origin) {
-      // Issue #8：Scene 拥有 owner handle 的 frame 注册——
-      // app-owned 同定义 → 借用（dispose no-op）；
-      // 同 id 不同定义 → fail-fast；否则创建 scene-owned registration。
+      // Issue #8 + #9：Scene 拥有 owner handle 的 frame 注册——
+      // 仅 app-owned 同定义 → 借用（dispose no-op）；
+      // registration-owned existing（无论来自 registerFrame 还是
+      // registerEnuFrame）→ DuplicateRegistrationError，不返回伪 lease；
+      // 同 id 不同定义 → fail-fast；新 id → scene-owned registration。
       const desired = createEnuFrame(id, datum.toEllipsoidal(origin))
       const existing = frames.get(id)
       if (existing) {
         if (!sameDefinition(existing.frame, desired)) {
           throw new ConflictingFrameDefinitionError(id)
         }
+        if (existing.owner !== 'app') {
+          throw new DuplicateRegistrationError('frame', id)
+        }
         return { frame: existing.frame, dispose: () => {} }
       }
       const token: object = {}
-      frames.set(id, { token, frame: desired })
+      frames.set(id, { owner: 'registration', token, frame: desired })
       let disposed = false
       return {
         frame: desired,
@@ -153,17 +172,21 @@ export function createSpatialApi(): SpatialApi {
       }
     },
     ensureEnuFrame(id, origin) {
-      // Issue #8-C：ensure 是 Composition Root 的幂等引导语义——
-      // 同 id 不同定义不得静默返回旧 frame
+      // Issue #8-C + #9-C：ensure 是 Composition Root 的幂等引导语义——
+      // 同 id 不同定义不得静默返回旧 frame；registration-owned entry
+      // 不得被隐式提升为 app-lifetime baseline（fail-fast）。
       const desired = createEnuFrame(id, datum.toEllipsoidal(origin))
       const existing = frames.get(id)
       if (existing) {
+        if (existing.owner !== 'app') {
+          throw new DuplicateRegistrationError('frame', id)
+        }
         if (!sameDefinition(existing.frame, desired)) {
           throw new ConflictingFrameDefinitionError(id)
         }
         return existing.frame
       }
-      frames.set(id, { token: {}, frame: desired })
+      frames.set(id, { owner: 'app', token: {}, frame: desired })
       return desired
     },
     setActiveFrame(id) {

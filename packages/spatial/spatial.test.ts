@@ -262,3 +262,72 @@ describe('ensureEnuFrame definition conflict（Issue #8-C）', () => {
     expect(spatial.getFrame('frame:scene')).toBeUndefined()
   })
 })
+
+describe('Frame registration ownership（Issue #9）', () => {
+  const ORIGIN_A = {
+    longitudeDegrees: 121.7821,
+    latitudeDegrees: 31.3622,
+    heightMeters: 4.2,
+    verticalReference: 'ellipsoid' as const
+  }
+  it('scene-owned duplicate：registration-owned existing 不得返回伪 borrow lease', () => {
+    const spatial = createSpatialApi()
+    const a = spatial.registerEnuFrame('frame:x', ORIGIN_A)
+    expect(() => spatial.registerEnuFrame('frame:x', ORIGIN_A)).toThrowError(
+      /duplicate frame registration/
+    )
+    // 原持有者 dispose 后才可重新注册；旧 disposer 不影响新 owner
+    a.dispose()
+    const b = spatial.registerEnuFrame('frame:x', ORIGIN_A)
+    expect(spatial.getFrame('frame:x')).toBeDefined()
+    a.dispose()
+    expect(spatial.getFrame('frame:x')).toBeDefined()
+    b.dispose()
+    expect(spatial.getFrame('frame:x')).toBeUndefined()
+  })
+
+  it('registerFrame-owned existing 不得被 registerEnuFrame 误判为 app-owned borrow', () => {
+    const spatial = createSpatialApi()
+    // 同定义（由同一 origin 计算的 ENU frame）→ registration-owned →
+    // fail-fast，不得被误判为 app-owned no-op borrow
+    const original = spatial.registerFrame(createEnuFrame('frame:x', ORIGIN_A))
+    expect(() => spatial.registerEnuFrame('frame:x', ORIGIN_A)).toThrowError(
+      /duplicate frame registration/
+    )
+    // registerEnuFrame 的 borrow 不影响原 owner 的 token 生命周期
+    original.dispose()
+    expect(spatial.getFrame('frame:x')).toBeUndefined()
+  })
+
+  it('ensureEnuFrame 不把 registration-owned entry 静默提升为 app baseline', () => {
+    const spatial = createSpatialApi()
+    const reg = spatial.registerEnuFrame('frame:scene-tmp', ORIGIN_A)
+    expect(() => spatial.ensureEnuFrame('frame:scene-tmp', ORIGIN_A)).toThrowError(
+      /duplicate frame registration/
+    )
+    reg.dispose()
+    // 回收后 ensure 可正常建立 app baseline
+    const appFrame = spatial.ensureEnuFrame('frame:scene-tmp', ORIGIN_A)
+    expect(spatial.getFrame('frame:scene-tmp')).toBe(appFrame)
+  })
+
+  it('app-owned borrow 语义保持：ensure → registerEnuFrame → dispose no-op', () => {
+    const spatial = createSpatialApi()
+    const appFrame = spatial.ensureEnuFrame('frame:baseline', ORIGIN_A)
+    const borrowed = spatial.registerEnuFrame('frame:baseline', ORIGIN_A)
+    expect(borrowed.frame).toBe(appFrame)
+    borrowed.dispose()
+    expect(spatial.getFrame('frame:baseline')).toBe(appFrame)
+  })
+
+  it('active frame invariant：registration-owned active frame 移除时清除并通知', () => {
+    const spatial = createSpatialApi()
+    const reg = spatial.registerEnuFrame('frame:active', ORIGIN_A)
+    spatial.setActiveFrame('frame:active')
+    const seen: Array<string | undefined> = []
+    spatial.onActiveFrameChanged((id) => seen.push(id))
+    reg.dispose()
+    expect(spatial.activeFrameId).toBeUndefined()
+    expect(seen).toEqual([undefined])
+  })
+})

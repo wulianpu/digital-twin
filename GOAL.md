@@ -342,3 +342,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   spatialFrames 指标并纳入 expectClean——teardown 后 frame registry 必须 baseline 归零；
   ⑤单测 +8（conflict/borrow/回收/异常路径兜底/类型收窄）。
   验证：pnpm verify 全绿、209/209 单测、compliance 40/40。
+
+- 2026-09-15 **Issue #9 修复（P1 回归：registerEnuFrame 误判 existing 为 app-owned，伪 borrow lease）**：
+  ①FrameEntry 增加 owner kind（'app' | 'registration'）——ensureEnuFrame 创建 → 'app'；
+  registerFrame / registerEnuFrame 创建 → 'registration'；
+  ②registerEnuFrame 仅对 app-owned 同定义 frame 返回 no-op borrow lease；
+  registration-owned existing（无论来自 registerFrame 还是 registerEnuFrame）→
+  DuplicateRegistrationError，不再返回无法维持资源生命期的伪 lease；
+  ③ensureEnuFrame 遇 registration-owned existing → fail-fast（#9-C），
+  Scene 临时资源不得被隐式提升为 app-lifetime baseline；
+  ④单测 +5（scene-owned duplicate / registerFrame-owned 误判 / ensure 提升拒绝 /
+  app-owned borrow 保持 / active frame invariant）。
+  验证：pnpm verify 全绿、214/214 单测、compliance 40/40。
