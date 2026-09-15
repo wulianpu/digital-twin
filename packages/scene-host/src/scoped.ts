@@ -120,6 +120,17 @@ export function scopedGraphicsAccess(
           const d = ctx.onPick(cb)
           scope.track(d)
           return d
+        },
+        // Issue #17-C：Entity 注册纳入 MountScope——Scene 手工 dispose 与
+        // Host 兜底都成立，Engine 级 entries 不再跨 Scene 泄漏
+        entities: {
+          ...ctx.entities,
+          register: (entity, object) => {
+            scope.assertCanCreate('graphics.entities.register')
+            const d = ctx.entities.register(entity, object)
+            scope.track(d)
+            return d
+          }
         }
       }
     },

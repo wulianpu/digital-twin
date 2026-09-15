@@ -26,10 +26,13 @@ export class GlobalEarthSystem implements GlobalEnvironmentApi {
     scene.add(this.root)
   }
 
-  /** ECEF meters -> scene position (km). Static placement inside the root. */
-  addObjectAtEcef(object: THREE.Object3D, ecefMeters: Vec3d): void {
+  /**
+   * 纯 placement（Issue #17-A）：ECEF meters -> scene position (km)。
+   * **不 reparent**——调用方对象保留在自己的 mount-owned subtree 下；
+   * 本 root 仅承担 camera-relative shift（§37.2），不得收编 Scene 资源。
+   */
+  setObjectEcefPosition(object: THREE.Object3D, ecefMeters: Vec3d): void {
     object.position.set(ecefMeters.x / 1000, ecefMeters.z / 1000, -ecefMeters.y / 1000)
-    this.root.add(object)
   }
 
   /** Camera-relative shift: keep the camera near the origin (§37.2). */

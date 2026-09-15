@@ -211,7 +211,7 @@ export class MockGraphicsAccess implements GraphicsAccess {
       },
       global: {
         enabled: true,
-        addObjectAtEcef: (object) => {
+        setObjectEcefPosition: (object) => {
           root.add(object)
         }
       },

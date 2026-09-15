@@ -3,6 +3,7 @@ import { FrameLoop } from './src/frameLoop'
 import { AdaptiveQuality, profileSettings } from './src/adaptive'
 import { TilesSystem, type TilesRendererLike } from './src/tiles'
 import { AssetLeaseManager, disposeObject3D, type AssetSource } from './src/resources'
+import type * as THREE from 'three'
 import { createGraphicsAccess } from './src/public'
 import type { EngineRuntime } from './src/runtime'
 import { createSceneViewDriver, siteExtentMeters } from './src/driver'
@@ -779,5 +780,62 @@ describe('GraphicsAccess per-use mount root（#14-r2 回归）', () => {
     expect(createMountRoot.mock.instances.length).toBeGreaterThanOrEqual(0)
     expect(runtimes).toHaveLength(1)
     access.dispose()
+  })
+})
+
+/** ---------------- Issue #17：Global 3D placement 语义与 ECEF 权威映射 */
+
+import { GlobalEarthSystem } from './src/earth'
+
+describe('ECEF → scene 轴映射 anchor（Issue #17-D 单一权威实现）', () => {
+  const A_KM = 6378.137
+  const B_KM = 6356.752
+
+  it('赤道 90°E：ECEF (0, a, 0) → scene (0, 0, -a)', () => {
+    const scene = GlobalEarthSystem.ecefMetersToScene({
+      x: 0,
+      y: A_KM * 1000,
+      z: 0
+    })
+    expect(scene.x).toBeCloseTo(0, 6)
+    expect(scene.y).toBeCloseTo(0, 6)
+    expect(scene.z).toBeCloseTo(-A_KM, 3)
+  })
+
+  it('北极：ECEF (0, 0, b) → scene (0, b, 0)', () => {
+    const scene = GlobalEarthSystem.ecefMetersToScene({
+      x: 0,
+      y: 0,
+      z: B_KM * 1000
+    })
+    expect(scene.x).toBeCloseTo(0, 6)
+    expect(scene.y).toBeCloseTo(B_KM, 3)
+    expect(scene.z).toBeCloseTo(0, 6)
+  })
+
+  it('setObjectEcefPosition 只设 position、不改 parent（不 reparent）', () => {
+    // earth 构造需要 canvas（graticule 纹理）——stub 掉 DOM
+    const noopCtx = new Proxy({}, { get: () => () => {} })
+    const fakeDocument = {
+      createElement: () => ({
+        width: 0,
+        height: 0,
+        getContext: () => noopCtx
+      })
+    }
+    vi.stubGlobal('document', fakeDocument)
+    try {
+      const earth = new GlobalEarthSystem({ add: () => {} } as never)
+      const parent = { children: [] }
+      const object = {
+        position: { set: vi.fn() },
+        parent
+      } as unknown as THREE.Object3D & { parent: unknown }
+      earth.setObjectEcefPosition(object, { x: 1000, y: 2000, z: 3000 })
+      expect(object.position.set).toHaveBeenCalledWith(1, 3, -2)
+      expect((object as { parent: unknown }).parent).toBe(parent) // 未被 reparent
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

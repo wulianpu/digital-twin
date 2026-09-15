@@ -74,8 +74,13 @@ export interface EnvironmentApi {
 
 export interface GlobalEnvironmentApi {
   readonly enabled: true
-  /** Place an object at an ECEF position (meters input, km scene units). */
-  addObjectAtEcef(object: THREE.Object3D, ecefMeters: Vec3d): void
+  /**
+   * 纯 placement（Issue #17-A）：把 ECEF meters 换算为场景坐标并写入
+   * object.position——**不改变 parent**。Scene 对象必须保留在自己的
+   * mount-owned subtree 下（§25），ownership 由 Host detach root 保证。
+   * 轴变换的权威实现在 SceneEngine（单处）。
+   */
+  setObjectEcefPosition(object: THREE.Object3D, ecefMeters: Vec3d): void
 }
 
 export interface EntitySystemApi {

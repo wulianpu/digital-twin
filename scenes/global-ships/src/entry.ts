@@ -89,9 +89,7 @@ const entry: SceneEntry = {
         if (!graphicsHandle && !graphicsBooting) {
           graphicsBooting = true
           const { mountGraphics } = await import('./graphics')
-          graphicsHandle = await mountGraphics(ctx, {
-            register: (entity, object) => ctx.graphics!.currentContext!.entities.register(entity, object)
-          })
+          graphicsHandle = await mountGraphics(ctx)
           graphicsBooting = false
           if (ctx.signal.aborted) {
             graphicsHandle.dispose()

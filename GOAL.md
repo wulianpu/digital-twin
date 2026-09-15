@@ -533,3 +533,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ②回归测试 +2（顺序 use：runtime 1 次/root 2 次且 identity 不同；并发 3 use：
   runtime 1 次/root 3 次互不共享）——正是复审指出的原测试盲区。
   验证：pnpm verify 全绿、270/270 单测、compliance 40/40、e2e 10/10。
+
+- 2026-09-16 **Issue #17 修复（P1：Global 3D 绕过 SceneMountRoot + ECEF 双重轴变换）**：
+  ①contract：`addObjectAtEcef` 改为 `setObjectEcefPosition`——纯 placement
+  （只写 position，轴变换权威单处实现），**不 reparent**；
+  ②GLOBAL 模式 createMountRoot 挂到 earth root（camera-relative shift 的正确
+  层级）——Scene 对象留在 mount subtree 内即可跟随地球；detach root 仍是
+  无条件回收路径；SITE 模式挂 sceneRoots 不变；
+  ③global-ships：group 保留在 graphics.root；marker placement 传原始 ECEF
+  （修复双重轴变换：90°E/(0,0,-a)、北极/(0,b,0) anchor 单测）；固定朝向
+  （rotation.set 替代每帧累计 rotateX）；移除路径先 unregister entity 再
+  group.remove（真实 parent 现在是 group）再 dispose GPU；
+  ④Entity 注册 mount-scoped：scopedGraphicsAccess 增加 entities.register
+  wrapper（assertCanCreate + scope.track），global-ships 弃用 currentContext
+  旁路，unmount 自动释放 Engine 级 entries；
+  ⑤测试 +7（ECEF anchor ×2 + 不 reparent + marker ownership/位置/朝向 +
+  移除与 dispose 全链路 ×2）。
+  验证：pnpm verify 全绿、275/275 单测、compliance 40/40、e2e 10/10。

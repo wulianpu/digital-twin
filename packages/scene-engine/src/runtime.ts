@@ -286,7 +286,14 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
   const createMountRoot = (): { root: THREE.Group; detach(): void } => {
     const root = new THREE.Group()
     root.name = `SceneMountRoot(${sceneRoots.children.length + 1})`
-    sceneRoots.add(root)
+    // Issue #17-A：GLOBAL 模式下 mount root 挂到 earth root（camera-relative
+    // shift 的正确层级），Scene 对象无需逃逸出 mount subtree 即可跟随地球；
+    // detach root 仍是 mount teardown 的无条件回收路径。SITE 模式挂 sceneRoots。
+    if (earth) {
+      earth.root.add(root)
+    } else {
+      sceneRoots.add(root)
+    }
     return { root, detach: () => root.removeFromParent() }
   }
 
