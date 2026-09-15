@@ -82,9 +82,15 @@ describe('scoped lifecycle wrappers（Issue #4 zombie-write 防线）', () => {
 
     // reads 仍透传：scene 可安全降级（session/current 为快照，按值比较）
     expect(scopedWorld.worldId).toBe(world.worldId)
-    expect(scopedWorld.session).toEqual(world.session)
+    // live 模式下 session.time / clock.now() 为墙钟，两次调用允许毫秒级差异
+    expect(scopedWorld.session.mode).toBe(world.session.mode)
+    expect(scopedWorld.session.scope).toEqual(world.session.scope)
+    expect(
+      Math.abs(
+        scopedWorld.session.time.epochMillis - world.session.time.epochMillis
+      )
+    ).toBeLessThan(50)
     expect(scopedSelection.current).toEqual(selection.current)
-    // live 模式下 now() 为墙钟，两次调用允许毫秒级差异
     expect(Math.abs(scopedWorld.clock.now().epochMillis - world.clock.now().epochMillis)).toBeLessThan(50)
   })
 
