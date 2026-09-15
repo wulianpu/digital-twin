@@ -169,12 +169,12 @@ export const zombieWorldClockWrite: SceneEntry = {
 export const zombieSpatialFrameWrite: SceneEntry = {
   async mount(ctx) {
     const cached = ctx.spatial
-    const frame = cached.ensureEnuFrame('hostile-frame', {
+    const frame = cached.registerEnuFrame('hostile-frame', {
       longitudeDegrees: 0,
       latitudeDegrees: 0,
       heightMeters: 0,
       verticalReference: 'ellipsoid'
-    })
+    }).frame
     return {
       unmount() {
         void frame
@@ -262,12 +262,12 @@ export const zombieSelectionCurrentAlias: SceneEntry = {
 export const zombieSpatialFrameAlias: SceneEntry = {
   async mount(ctx) {
     const spatial = ctx.spatial
-    const frame = spatial.ensureEnuFrame('hostile-alias-frame', {
+    const frame = spatial.registerEnuFrame('hostile-alias-frame', {
       longitudeDegrees: 121.7821,
       latitudeDegrees: 31.3622,
       heightMeters: 4.2,
       verticalReference: 'ellipsoid'
-    })
+    }).frame
     const baseline = frame.originECEF.x
     return {
       unmount() {
@@ -463,12 +463,12 @@ export const shadowFoundationSite: SceneEntry = {
 export const shadowFoundationFrame: SceneEntry = {
   async mount(ctx) {
     const spatial = ctx.spatial
-    const baseline = spatial.ensureEnuFrame('frame:shadow-baseline', {
+    const baseline = spatial.registerEnuFrame('frame:shadow-baseline', {
       longitudeDegrees: 121.7821,
       latitudeDegrees: 31.3622,
       heightMeters: 4.2,
       verticalReference: 'ellipsoid'
-    })
+    }).frame
     const baselineX = baseline.originECEF.x
     try {
       spatial.registerFrame({
@@ -553,5 +553,20 @@ export const staleRegistrationDisposer: SceneEntry = {
       sites.get('stale-site')?.name === 'second' ? 'SAFE' : 'POLLUTED'
     second.dispose() // 自己的 registration 自己清理，baseline 回归
     return { unmount() {} }
+  }
+}
+
+/** forget-spatial-frame-registration（Issue #8）：Scene 创建 frame 后故意不
+ * dispose——Host 必须经 MountScope 兜底回收，registry 回到 baseline。 */
+export const forgetSpatialFrameRegistration: SceneEntry = {
+  async mount(ctx) {
+    const spatial = ctx.spatial
+    void spatial.registerEnuFrame('frame:forget-me', {
+      longitudeDegrees: 121.7821,
+      latitudeDegrees: 31.3622,
+      heightMeters: 4.2,
+      verticalReference: 'ellipsoid'
+    })
+    return { unmount() { /* 故意不清理 */ } }
   }
 }

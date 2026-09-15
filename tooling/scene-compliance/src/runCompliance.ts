@@ -38,6 +38,8 @@ const COMPLIANCE_SITE_B: Site = {
 export interface CycleMetrics extends MockCounters {
   uiLayers: number
   contextState: string
+  /** Issue #8：teardown 后 frame registry 必须回到 baseline（fresh spatial → 0）。 */
+  spatialFrames: number
 }
 
 export interface ComplianceReport {
@@ -135,7 +137,8 @@ export async function runComplianceCycles(
     const peak: CycleMetrics = {
       ...counters,
       uiLayers: host.liveUiLayers,
-      contextState: host.contextState ?? 'unknown'
+      contextState: host.contextState ?? 'unknown',
+      spatialFrames: spatial.listFrames().length
     }
     report.peaks.push(peak)
 
@@ -143,7 +146,8 @@ export async function runComplianceCycles(
     const leftover: CycleMetrics = {
       ...counters,
       uiLayers: host.liveUiLayers,
-      contextState: host.contextState ?? 'unknown'
+      contextState: host.contextState ?? 'unknown',
+      spatialFrames: spatial.listFrames().length
     }
     report.leftovers.push(leftover)
 

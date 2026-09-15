@@ -84,30 +84,34 @@ describe('scoped lifecycle wrappers（Issue #4 zombie-write 防线）', () => {
     expect(scopedWorld.worldId).toBe(world.worldId)
     expect(scopedWorld.session).toEqual(world.session)
     expect(scopedSelection.current).toEqual(selection.current)
-    expect(scopedWorld.clock.now()).toEqual(world.clock.now())
+    // live 模式下 now() 为墙钟，两次调用允许毫秒级差异
+    expect(Math.abs(scopedWorld.clock.now().epochMillis - world.clock.now().epochMillis)).toBeLessThan(50)
   })
 
   it('disposed：spatial 写/创建被拒，读与坐标转换仍有效', () => {
     const scope = new MountScope()
     const spatial = createSpatialApi()
     const scoped = scopedSpatialApi(spatial, scope)
-    const frame = scoped.ensureEnuFrame('f1', GEO)
+    // Issue #8：scene-owned frame 经 owner handle 注册
+    scoped.registerEnuFrame('f1', GEO)
     scoped.setActiveFrame('f1')
     scope.dispose()
 
-    expect(() => scoped.ensureEnuFrame('f2', GEO)).toThrow(SceneScopeClosedError)
+    // scope.dispose 兜底回收 scene-owned frame（不再遗留永久 registry entry）
+    expect(scoped.getFrame('f1')).toBeUndefined()
+    expect(scoped.activeFrameId).toBeUndefined()
+    expect(scoped.listFrames().length).toBe(0)
+
+    expect(() => scoped.registerEnuFrame('f2', GEO)).toThrow(SceneScopeClosedError)
     expect(() =>
-      scoped.registerFrame({ id: 'f3', kind: 'enu', origin: GEO } as never)
+      scoped.registerFrame({ id: 'f3', originECEF: { x: 0, y: 0, z: 0 }, basisECEF: {
+        xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1
+      } } as never)
     ).toThrow(SceneScopeClosedError)
     expect(() => scoped.registerVerticalOffset('ellipsoid', 'ellipsoid', 1)).toThrow(
       SceneScopeClosedError
     )
     expect(() => scoped.setActiveFrame('f2')).toThrow(SceneScopeClosedError)
-
-    // reads 仍透传
-    expect(scoped.getFrame('f1')).toBe(frame)
-    expect(scoped.activeFrameId).toBe('f1')
-    expect(scoped.listFrames().length).toBe(1)
   })
 
   it('disposed：view 异步写抛错，不触达 driver', async () => {
@@ -336,11 +340,11 @@ describe('Issue #5：nested capability / mutable alias / create-before-guard', (
     expect(world.sites.list()[0]!.bounds.south).toBe(1)
   })
 
-  it('B4: frame 冻结——getFrame/ensureEnuFrame 返回值不可变，registerFrame 存副本', () => {
+  it('B4: frame 冻结——registerEnuFrame/registerFrame 返回值不可变，registry 存副本', () => {
     const scope = new MountScope()
     const spatial = createSpatialApi()
     const scoped = scopedSpatialApi(spatial, scope)
-    const ensured = scoped.ensureEnuFrame('f1', GEO)
+    const ensured = scoped.registerEnuFrame('f1', GEO).frame
     const baselineX = ensured.originECEF.x
     expect(() => { (ensured.originECEF as { x: number }).x = 0 }).toThrow(TypeError)
     expect(() => { (ensured.basisECEF as { xx: number }).xx = 0 }).toThrow(TypeError)
@@ -511,5 +515,104 @@ describe('Issue #6：write-side input alias（setter 入参防御性拷贝）', 
     expect(stored.name).toBe('Reg')
     d.dispose()
     expect(world.sites.get('site-reg')).toBeUndefined()
+  })
+})
+
+describe('Issue #8：ensureEnuFrame ownership 收口', () => {
+  function makeSpatialServices(): {
+    services: SceneHostOptions['services']
+    spatial: ReturnType<typeof createSpatialApi>
+  } {
+    const spatial = createSpatialApi()
+    return {
+      spatial,
+      services: {
+        world: createWorldApi(),
+        spatial,
+        data: { subscribe: () => ({ dispose: () => {} }) },
+        selection: createSelectionApi(),
+        view: makeViewInner().view,
+        assets: {}
+      } as unknown as SceneHostOptions['services']
+    }
+  }
+
+  it('Scene 经 registerEnuFrame 创建 frame，unmount 后 registry 回到 mount 前 baseline', async () => {
+    const { services, spatial } = makeSpatialServices()
+    const host = new SceneHost({
+      viewport: { ui: document.createElement('div') },
+      services
+    })
+    const mount = await host.mount({
+      mount: async (ctx) => {
+        const reg = ctx.spatial.registerEnuFrame('frame:scene-temp', GEO)
+        ctx.spatial.setActiveFrame(reg.frame.id)
+        expect(spatial.getFrame('frame:scene-temp')).toBeDefined()
+        return { unmount: () => {} }
+      }
+    })
+    await mount.unmount()
+    // DoD：Scene 正常 unmount 后，frame registry 回到 baseline，active frame 无悬空
+    expect(spatial.getFrame('frame:scene-temp')).toBeUndefined()
+    expect(spatial.listFrames()).toHaveLength(0)
+    expect(spatial.activeFrameId).toBeUndefined()
+  })
+
+  it('cleanup throw / unmountHangs 时 scene-owned frame 同样被兜底回收', async () => {
+    for (const broken of ['throw', 'hang'] as const) {
+      const { services, spatial } = makeSpatialServices()
+      const host = new SceneHost({
+        viewport: { ui: document.createElement('div') },
+        services,
+        unmountDeadlineMs: 50
+      })
+      const mount = await host.mount({
+        mount: async (ctx) => {
+          ctx.spatial.registerEnuFrame(`frame:broken-${broken}`, GEO)
+          return broken === 'throw'
+            ? { unmount: () => { throw new Error('cleanup exploded') } }
+            : { unmount: () => new Promise<void>(() => {}) }
+        }
+      })
+      await mount.unmount()
+      expect(spatial.getFrame(`frame:broken-${broken}`)).toBeUndefined()
+    }
+  })
+
+  it('SceneContext.spatial 不再暴露 ensureEnuFrame（类型收窄 + 运行时无泄漏入口）', async () => {
+    const { services } = makeSpatialServices()
+    const host = new SceneHost({
+      viewport: { ui: document.createElement('div') },
+      services
+    })
+    await host.mount({
+      mount: async (ctx) => {
+        // 类型层面已收窄；运行时对象也不含 ensure 入口
+        expect('ensureEnuFrame' in ctx.spatial).toBe(false)
+        return { unmount: () => {} }
+      }
+    })
+  })
+
+  it('registerEnuFrame 借用 app-owned 同定义 frame：dispose 为 no-op，不删除 baseline', async () => {
+    const { services, spatial } = makeSpatialServices()
+    // Composition Root 先 ensure 平台 frame
+    const appFrame = spatial.ensureEnuFrame('frame:app-owned', GEO)
+    const host = new SceneHost({
+      viewport: { ui: document.createElement('div') },
+      services
+    })
+    const mount = await host.mount({
+      mount: async (ctx) => {
+        const reg = ctx.spatial.registerEnuFrame('frame:app-owned', GEO)
+        expect(reg.frame).toBe(appFrame)
+        reg.dispose() // 借用 lease：不得删除 app-owned baseline
+        expect(spatial.getFrame('frame:app-owned')).toBe(appFrame)
+        return { unmount: () => {} }
+      }
+    })
+    await mount.unmount()
+    // app-owned frame 不受 scene 生命周期影响
+    expect(spatial.getFrame('frame:app-owned')).toBe(appFrame)
   })
 })

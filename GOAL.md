@@ -327,3 +327,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   hostile fixtures +4（shadow-foundation-site/frame/datum、stale-registration-disposer，
   断言 teardown 后 baseline 完全一致）。
   验证：pnpm verify 全绿、201/201 单测、compliance 39/39。
+
+- 2026-09-15 **Issue #8 修复（P0：ensureEnuFrame 无 owner handle 产生不可回收 frame）**：
+  ①采纳方案 A+C：SceneContext.spatial 类型收窄为 SceneSpatialApi（Omit ensureEnuFrame，
+  sdk re-export）——Scene 不再暴露"永久 ensure"能力；ensureEnuFrame 保留给 Composition
+  Root（portal/standalone bootstrap），并新增定义冲突检测：同 id 不同 origin/datum 抛
+  ConflictingFrameDefinitionError，不再静默复用旧空间基准；
+  ②新增 registerEnuFrame(id, origin): FrameRegistration（{frame, dispose}）——app-owned
+  同定义 → 借用 lease（dispose no-op）；新 id → scene-owned registration（token 绑定，
+  MountScope createTracked 回收）；同 id 不同定义 → fail-fast；
+  ③4 个 catalog scene（vehicle-navigation/stack-yard/production/heavy-transport）迁移到
+  registerEnuFrame；fixtures 同步改造（zombieSpatialFrameWrite/Alias、shadowFoundationFrame）；
+  ④hostile fixture +1（forget-spatial-frame-registration）；compliance CycleMetrics 新增
+  spatialFrames 指标并纳入 expectClean——teardown 后 frame registry 必须 baseline 归零；
+  ⑤单测 +8（conflict/borrow/回收/异常路径兜底/类型收窄）。
+  验证：pnpm verify 全绿、209/209 单测、compliance 40/40。

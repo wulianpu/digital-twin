@@ -203,3 +203,62 @@ describe('Registration ownership（Issue #7）', () => {
     expect(spatial.getFrame('frame:x')).toBeDefined()
   })
 })
+
+describe('ensureEnuFrame definition conflict（Issue #8-C）', () => {
+  const ORIGIN_A = {
+    longitudeDegrees: 121.7821,
+    latitudeDegrees: 31.3622,
+    heightMeters: 4.2,
+    verticalReference: 'ellipsoid' as const
+  }
+  const ORIGIN_B = {
+    longitudeDegrees: 121.6523,
+    latitudeDegrees: 31.6857,
+    heightMeters: 3.8,
+    verticalReference: 'ellipsoid' as const
+  }
+
+  it('同 id 同定义：幂等返回', () => {
+    const spatial = createSpatialApi()
+    const first = spatial.ensureEnuFrame('site-a', ORIGIN_A)
+    const second = spatial.ensureEnuFrame('site-a', ORIGIN_A)
+    expect(second).toBe(first)
+    expect(spatial.listFrames()).toHaveLength(1)
+  })
+
+  it('同 id 不同 origin：fail-fast，不静默复用旧 frame', () => {
+    const spatial = createSpatialApi()
+    spatial.ensureEnuFrame('site-a', ORIGIN_A)
+    expect(() => spatial.ensureEnuFrame('site-a', ORIGIN_B)).toThrowError(
+      /conflicting definition/
+    )
+    // baseline 保持
+    const kept = spatial.getFrame('site-a')!
+    expect(kept.originECEF.x).toBeCloseTo(
+      createEnuFrame('probe', ORIGIN_A).originECEF.x,
+      6
+    )
+  })
+
+  it('registerEnuFrame：scene-owned 创建 → dispose 回收；借用 app-owned → no-op', () => {
+    const spatial = createSpatialApi()
+    const appFrame = spatial.ensureEnuFrame('frame:app', ORIGIN_A)
+
+    // 借用同定义 app-owned frame
+    const borrowed = spatial.registerEnuFrame('frame:app', ORIGIN_A)
+    expect(borrowed.frame).toBe(appFrame)
+    borrowed.dispose()
+    expect(spatial.getFrame('frame:app')).toBe(appFrame)
+
+    // 借用不同定义 → 冲突 fail-fast
+    expect(() => spatial.registerEnuFrame('frame:app', ORIGIN_B)).toThrowError(
+      /conflicting definition/
+    )
+
+    // 新 id → scene-owned，dispose 回收
+    const owned = spatial.registerEnuFrame('frame:scene', ORIGIN_B)
+    expect(spatial.getFrame('frame:scene')).toBeDefined()
+    owned.dispose()
+    expect(spatial.getFrame('frame:scene')).toBeUndefined()
+  })
+})

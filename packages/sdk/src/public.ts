@@ -87,6 +87,8 @@ export type {
 } from '@twin/world-client'
 export type {
   SpatialApi,
+  SceneSpatialApi,
+  FrameRegistration,
   ReferenceFrame,
   ReferenceFrameId,
   GeodeticPosition,

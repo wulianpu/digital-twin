@@ -32,7 +32,8 @@ function expectClean(report: ComplianceReport): void {
       ['frameCallbacks', leftover.frameCallbacks],
       ['pickCallbacks', leftover.pickCallbacks],
       ['dataSubscriptions', leftover.dataSubscriptions],
-      ['uiLayers', leftover.uiLayers]
+      ['uiLayers', leftover.uiLayers],
+      ['spatialFrames', leftover.spatialFrames]
     ]
     for (const [name, value] of checks) {
       if (value !== 0) nonzero.push(`cycle ${i}: ${name} = ${value}`)
@@ -111,6 +112,7 @@ describe('Hostile scene compliance（Issue #1 问题5）', () => {
     { id: 'hostile:forget-asset-lease', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetAssetLease) },
     { id: 'hostile:forget-frame-callback', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetFrameCallback) },
     { id: 'hostile:forget-pick-callback', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetPickCallback) },
+    { id: 'hostile:forget-spatial-frame-registration', load: () => import('./fixtures/hostile-scenes').then(m => m.forgetSpatialFrameRegistration) },
     { id: 'hostile:unmount-throws', load: () => import('./fixtures/hostile-scenes').then(m => m.unmountThrows) },
     { id: 'hostile:zombie-cached-context', load: () => import('./fixtures/hostile-scenes').then(m => m.zombieCachedContext) },
   ]

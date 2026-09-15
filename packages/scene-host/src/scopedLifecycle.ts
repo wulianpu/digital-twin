@@ -5,7 +5,7 @@ import type {
   SiteRegistryApi,
   WorldTimeApi
 } from '@twin/world'
-import type { SpatialApi } from '@twin/spatial'
+import type { SceneSpatialApi } from '@twin/spatial'
 import type { ViewApi } from '@twin/sdk'
 import type { MountScope } from './scope'
 
@@ -110,16 +110,25 @@ export function scopedWorldApi(
   }
 }
 
-export function scopedSpatialApi(inner: SpatialApi, scope: MountScope): SpatialApi {
+export function scopedSpatialApi(inner: SceneSpatialApi, scope: MountScope): SceneSpatialApi {
   return {
     get activeFrameId() { return inner.activeFrameId },
     listFrames: () => inner.listFrames(),
     getFrame: (id) => inner.getFrame(id),
     registerFrame: (frame) =>
       createTracked(scope, 'spatial.registerFrame', () => inner.registerFrame(frame)),
-    ensureEnuFrame: (id, origin) => {
-      scope.assertCanCreate('spatial.ensureEnuFrame')
-      return inner.ensureEnuFrame(id, origin)
+    // Issue #8：Scene 拿到的是带 owner handle 的 registration（借用 app-owned
+    // frame 时 dispose 为 no-op）——scope.dispose 后 scene-owned frame 被回收。
+    // 注意不能用 createTracked：MountScope.track 的包装只保留 dispose，
+    // 会丢掉 registration.frame。
+    registerEnuFrame: (id, origin) => {
+      scope.assertCanCreate('spatial.registerEnuFrame')
+      const registration = inner.registerEnuFrame(id, origin)
+      const tracked = scope.track(registration)
+      return {
+        frame: registration.frame,
+        dispose: () => { tracked.dispose() }
+      }
     },
     setActiveFrame: (id) => {
       assertWrite(scope, 'spatial.setActiveFrame')

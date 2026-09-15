@@ -38,10 +38,10 @@ interface TransportState {
 const entry: SceneEntry = {
   async mount(ctx: SceneContext): Promise<SceneMount> {
     const site = resolveSite(ctx)
-    const frame = ctx.spatial.ensureEnuFrame(
+    const frame = ctx.spatial.registerEnuFrame(
       `frame:${site.id}`,
       ctx.spatial.toEllipsoidal(site.origin)
-    )
+      ).frame
     ctx.spatial.setActiveFrame(frame.id)
 
     const plan = createTransportPlan(site, frame)

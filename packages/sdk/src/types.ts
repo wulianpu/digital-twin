@@ -1,6 +1,6 @@
 import type { EntityRef, SiteId, WorldApi, SelectionApi } from '@twin/world'
 import type { DataApi } from '@twin/world-client'
-import type { SpatialApi, GeodeticPosition } from '@twin/spatial'
+import type { SceneSpatialApi, GeodeticPosition } from '@twin/spatial'
 import type { AssetRef } from '@twin/content'
 import type { MapAccess } from './engines'
 import type { GraphicsAccess } from './engines'
@@ -133,7 +133,7 @@ export interface SceneContext {
 
   // Platform semantics (§14)
   readonly world: WorldApi
-  readonly spatial: SpatialApi
+  readonly spatial: SceneSpatialApi
   readonly data: DataApi
   /** One business selection shared by every engine (§57). */
   readonly selection: SelectionApi

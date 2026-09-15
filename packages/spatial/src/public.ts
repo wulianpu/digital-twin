@@ -16,8 +16,8 @@ export type {
   SpatialAnchor
 } from './types'
 
-export { createSpatialApi } from './api'
-export type { SpatialApi } from './api'
+export { createSpatialApi, ConflictingFrameDefinitionError } from './api'
+export type { SpatialApi, SceneSpatialApi, FrameRegistration } from './api'
 export {
   WGS84_A,
   WGS84_F,
