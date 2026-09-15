@@ -313,3 +313,17 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④hostile fixtures +4（world-scope-input-alias 含 onSessionChanged 零事件断言、
   selection primary/secondary/toggle-input-alias）+ scoped-lifecycle.test.ts +3 用例。
   验证：pnpm verify 全绿、185/185 单测、compliance 35/35。
+
+- 2026-09-15 **Issue #7 修复（P0：registration ownership——同 key shadow 与 stale disposer）**：
+  ①三处 Foundation registry（World Site / Spatial ReferenceFrame / Vertical Datum）
+  改互斥注册：duplicate key 抛 DuplicateRegistrationError（world/spatial 各自包内定义
+  并经 public.ts 导出），不修改原值、无任何瞬时 registry mutation / listener 副作用；
+  ②所有 registration disposer 绑定 registration identity token（compare-and-delete）
+  ——stale disposer 永远不能删除后来 owner 的 registration，且 dispose 幂等；
+  ③Spatial active frame 不变量：owner 合法移除 active frame 时自动 setActiveFrame(undefined)
+  并通知 listener，杜绝 activeFrameId 悬空；
+  ④ensureEnuFrame 保持幂等语义（existing → 返回）不受互斥影响；
+  ⑤单测 +9（duplicate reject / stale disposer / 幂等 / baseline 保持 / active frame 不变量），
+  hostile fixtures +4（shadow-foundation-site/frame/datum、stale-registration-disposer，
+  断言 teardown 后 baseline 完全一致）。
+  验证：pnpm verify 全绿、201/201 单测、compliance 39/39。

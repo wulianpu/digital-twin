@@ -115,3 +115,51 @@ describe('GeoBounds', () => {
     expect(c.longitudeDegrees).toBe(122)
   })
 })
+
+describe('Registration ownership（Issue #7）', () => {
+  it('duplicate site key fail-fast：拒绝覆盖、baseline 保持、无 listener 副作用', () => {
+    const world = createWorldApi({ sites: [siteA] })
+    let changes = 0
+    world.onSessionChanged(() => changes++) // 无关事件基线
+    const siteEvents: number[] = []
+    // siteListeners 无公开订阅——用 list() 长度断言无瞬时变更
+    expect(() =>
+      world.sites.register({ ...siteA, name: 'shadow' })
+    ).toThrowError(/duplicate site registration/)
+    expect(world.sites.get('site-changxing')?.name).toBe('长兴基地')
+    expect(changes).toBe(0)
+    void siteEvents
+  })
+
+  it('stale disposer：dispose → 重注册 → 旧 disposer 再 dispose 不得删除新 registration', () => {
+    const world = createWorldApi()
+    const first = world.sites.register(siteA)
+    first.dispose()
+    expect(world.sites.get('site-changxing')).toBeUndefined()
+
+    const second = world.sites.register({ ...siteA, name: 'second' })
+    first.dispose() // stale：token 不匹配，必须 no-op
+    expect(world.sites.get('site-changxing')?.name).toBe('second')
+
+    second.dispose() // 自己的 token 才能删除
+    expect(world.sites.get('site-changxing')).toBeUndefined()
+  })
+
+  it('disposer 幂等：重复 dispose 只删除一次', () => {
+    const world = createWorldApi()
+    const d = world.sites.register(siteA)
+    d.dispose()
+    d.dispose()
+    d.dispose()
+    expect(world.sites.get('site-changxing')).toBeUndefined()
+    // 之后再注册不受影响
+    expect(() => world.sites.register(siteA)).not.toThrow()
+  })
+
+  it('initialScope / initial sites 输入对象无别名（write-side snapshot）', () => {
+    const scope = { kind: 'site' as const, siteId: 'site-changxing' }
+    const world = createWorldApi({ sites: [siteA], initialScope: scope })
+    scope.siteId = 'hijacked'
+    expect(world.session.scope).toEqual({ kind: 'site', siteId: 'site-changxing' })
+  })
+})

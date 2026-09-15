@@ -46,7 +46,10 @@ export interface CreateWorldOptions {
   selection?: SelectionApi
 }
 
-/** Issue #5：read model 与内部 state 脱离别名（copy-on-read snapshot）。 */
+/**
+ * Issue #6：write-side alias 防线——外部 mutable value 进入 Foundation
+ * 前 normalize/copy；Foundation 内部不持有调用方可继续修改的引用。
+ */
 function snapshotScope(scope: WorldScope): WorldScope {
   if (scope.kind === 'entity') {
     return { kind: 'entity', entity: { ...scope.entity } }
@@ -63,15 +66,41 @@ function snapshotSite(site: Site): Site {
   }
 }
 
+/**
+ * Registration identity（Issue #7）：disposer 绑定注册身份而非仅绑定 key——
+ * stale disposer 永远不能删除后来 owner 的 registration。
+ */
+interface Registration<T> {
+  readonly token: object
+  readonly value: T
+}
+
+/**
+ * Issue #7：Foundation facts 互斥注册——重复 key fail-fast，
+ * 不修改原值、不产生 listener 副作用。
+ */
+export class DuplicateRegistrationError extends Error {
+  readonly key: string
+  constructor(what: string, key: string) {
+    super(
+      `[world] duplicate ${what} registration: "${key}"（Foundation facts 互斥注册，更新请走 app-owned API）`
+    )
+    this.name = 'DuplicateRegistrationError'
+    this.key = key
+  }
+}
+
 /** The one logical digital world. Scope/Mode are views onto it (§29-30). */
 export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
   const worldId = options.worldId ?? 'world-main'
   const clock = new WorldClock()
   if (options.initialMode) clock.setMode(options.initialMode)
 
-  const sites = new Map<SiteId, Site>()
+  const sites = new Map<SiteId, Registration<Site>>()
   // Issue #6：Foundation owns facts——初始 sites 同样防御性拷贝
-  for (const site of options.sites ?? []) sites.set(site.id, snapshotSite(site))
+  for (const site of options.sites ?? []) {
+    sites.set(site.id, { token: {}, value: snapshotSite(site) })
+  }
 
   // Issue #6：write-side alias 防线——内部 truth 不持有调用方可变引用
   let scope: WorldScope = snapshotScope(options.initialScope ?? { kind: 'global' })
@@ -100,20 +129,20 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
 
   const siteRegistry: SiteRegistryApi = {
     get: (id) => {
-      const site = sites.get(id)
-      return site ? snapshotSite(site) : undefined
+      const entry = sites.get(id)
+      return entry ? snapshotSite(entry.value) : undefined
     },
-    list: () => [...sites.values()].map(snapshotSite),
+    list: () => [...sites.values()].map((entry) => snapshotSite(entry.value)),
     findContaining(bounds) {
-      for (const site of sites.values()) {
-        const b = site.bounds
+      for (const entry of sites.values()) {
+        const b = entry.value.bounds
         if (
           bounds.south >= b.south &&
           bounds.north <= b.north &&
           bounds.west >= b.west &&
           bounds.east <= b.east
         ) {
-          return snapshotSite(site)
+          return snapshotSite(entry.value)
         }
       }
       return undefined
@@ -121,10 +150,21 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
     register(site) {
       // Issue #6：registry 存防御性副本——调用方后续修改 origin/bounds 不影响 truth
       const stored = snapshotSite(site)
-      sites.set(stored.id, stored)
+      // Issue #7：互斥注册——duplicate key fail-fast，无任何瞬时副作用
+      if (sites.has(stored.id)) {
+        throw new DuplicateRegistrationError('site', stored.id)
+      }
+      const token: object = {}
+      sites.set(stored.id, { token, value: stored })
       for (const cb of siteListeners) cb()
+      let disposed = false
       return {
         dispose: () => {
+          if (disposed) return
+          disposed = true
+          // Issue #7：compare-and-delete——stale disposer 不得删除
+          // 后来 owner 的 registration
+          if (sites.get(stored.id)?.token !== token) return
           sites.delete(stored.id)
           for (const cb of siteListeners) cb()
         }

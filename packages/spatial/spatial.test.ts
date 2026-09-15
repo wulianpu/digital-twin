@@ -128,3 +128,78 @@ describe('quaternion math', () => {
     expect(quatSlerp(a, b, 1).y).toBeCloseTo(Math.sin(Math.PI / 4), 5)
   })
 })
+
+describe('Registration ownership（Issue #7）', () => {
+  const ORIGIN = {
+    longitudeDegrees: 121.7821,
+    latitudeDegrees: 31.3622,
+    heightMeters: 4.2,
+    verticalReference: 'ellipsoid' as const
+  }
+  const FRAME = {
+    id: 'frame:x',
+    originECEF: { x: 1, y: 2, z: 3 },
+    basisECEF: { xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1 }
+  }
+
+  it('duplicate frame id fail-fast：拒绝覆盖，baseline frame 不变', () => {
+    const spatial = createSpatialApi()
+    const baseline = spatial.registerFrame(FRAME)
+    expect(() =>
+      spatial.registerFrame({
+        id: 'frame:x',
+        originECEF: { x: 9, y: 9, z: 9 },
+        basisECEF: FRAME.basisECEF
+      })
+    ).toThrowError(/duplicate frame registration/)
+    expect(spatial.getFrame('frame:x')!.originECEF).toEqual({ x: 1, y: 2, z: 3 })
+    baseline.dispose()
+  })
+
+  it('duplicate datum pair fail-fast：拒绝覆盖，基准值保持', () => {
+    const spatial = createSpatialApi()
+    const d = spatial.registerVerticalOffset('chart-datum', 'ellipsoid', 2.34)
+    expect(() =>
+      spatial.registerVerticalOffset('chart-datum', 'ellipsoid', 9.99)
+    ).toThrowError(/duplicate vertical datum offset/)
+    expect(spatial.toEllipsoidal({
+      ...ORIGIN,
+      heightMeters: 10,
+      verticalReference: 'chart-datum' as never
+    }).heightMeters).toBeCloseTo(12.34)
+    d.dispose()
+  })
+
+  it('stale frame disposer：不得删除后来 owner 的 registration', () => {
+    const spatial = createSpatialApi()
+    const first = spatial.registerFrame(FRAME)
+    first.dispose()
+    const second = spatial.registerFrame({ ...FRAME, originECEF: { x: 5, y: 5, z: 5 } })
+    first.dispose() // stale：no-op
+    expect(spatial.getFrame('frame:x')!.originECEF).toEqual({ x: 5, y: 5, z: 5 })
+    second.dispose()
+    expect(spatial.getFrame('frame:x')).toBeUndefined()
+  })
+
+  it('active frame 不变量：owner 合法移除 active frame 时自动清除并通知', () => {
+    const spatial = createSpatialApi()
+    const d = spatial.registerFrame(FRAME)
+    spatial.setActiveFrame('frame:x')
+    expect(spatial.activeFrameId).toBe('frame:x')
+    const seen: Array<string | undefined> = []
+    spatial.onActiveFrameChanged((id) => seen.push(id))
+    d.dispose()
+    expect(spatial.activeFrameId).toBeUndefined()
+    expect(seen).toEqual([undefined])
+    expect(() => spatial.geodeticToLocal(ORIGIN)).toThrow(/no active reference frame/)
+  })
+
+  it('disposer 幂等：重复 dispose 不影响后续重注册', () => {
+    const spatial = createSpatialApi()
+    const d = spatial.registerFrame(FRAME)
+    d.dispose()
+    d.dispose()
+    expect(() => spatial.registerFrame(FRAME)).not.toThrow()
+    expect(spatial.getFrame('frame:x')).toBeDefined()
+  })
+})

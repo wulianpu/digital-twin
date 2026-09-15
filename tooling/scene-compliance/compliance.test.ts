@@ -268,6 +268,57 @@ describe('Hostile scene compliance: write-side input alias（Issue #6）', () =>
   )
 })
 
+describe('Hostile scene compliance: registration ownership（Issue #7）', () => {
+  const OWNERSHIP_FIXTURES: Array<{
+    id: string
+    checks: Array<[string, string]>
+    load: () => Promise<unknown>
+  }> = [
+    {
+      id: 'hostile:shadow-foundation-site',
+      checks: [
+        ['shadow-site-register', 'REJECTED'],
+        ['site-baseline-after', 'SAFE']
+      ],
+      load: () => import('./fixtures/hostile-scenes').then(m => m.shadowFoundationSite)
+    },
+    {
+      id: 'hostile:shadow-foundation-frame',
+      checks: [
+        ['shadow-frame-register', 'REJECTED'],
+        ['frame-baseline-after', 'SAFE']
+      ],
+      load: () => import('./fixtures/hostile-scenes').then(m => m.shadowFoundationFrame)
+    },
+    {
+      id: 'hostile:shadow-foundation-datum',
+      checks: [
+        ['shadow-datum-register', 'REJECTED'],
+        ['datum-shadow-value', 'OK']
+      ],
+      load: () => import('./fixtures/hostile-scenes').then(m => m.shadowFoundationDatum)
+    },
+    {
+      id: 'hostile:stale-registration-disposer',
+      checks: [['stale-disposer', 'SAFE']],
+      load: () => import('./fixtures/hostile-scenes').then(m => m.staleRegistrationDisposer)
+    }
+  ]
+
+  it.each(OWNERSHIP_FIXTURES.map(f => [f.id, f.checks, f.load] as const))(
+    '%s: duplicate 拒绝 + baseline 保持',
+    async (sceneId, checks, load) => {
+      const report = await runComplianceCycles(sceneId, load, { cycles: 2, framesPerCycle: 5 })
+      expect(report.errors).toEqual([])
+      expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
+      for (const [key, expected] of checks) {
+        expect(zombieWriteProbes[key]).toBe(expected)
+      }
+    },
+    15_000
+  )
+})
+
 describe('Gate #2: production 2D ↔ 3D toggle ×100', () => {
   it('toggles 100 times with the scene mounted once', async () => {
     const result = await runToggleStress('production', () => import('@twin/scene-production'), 100)

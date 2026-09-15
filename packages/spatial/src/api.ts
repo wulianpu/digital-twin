@@ -1,4 +1,4 @@
-import { VerticalDatumRegistry } from './datum'
+import { VerticalDatumRegistry, DuplicateRegistrationError } from './datum'
 import {
   createEnuFrame,
   ecefToFrameLocal,
@@ -46,7 +46,8 @@ export interface SpatialApi {
 }
 
 export function createSpatialApi(): SpatialApi {
-  const frames = new Map<ReferenceFrameId, ReferenceFrame>()
+  // Issue #7：registration identity——disposer 绑定注册身份而非仅绑定 key
+  const frames = new Map<ReferenceFrameId, { token: object; frame: ReferenceFrame }>()
   const datum = new VerticalDatumRegistry()
   let activeFrameId: ReferenceFrameId | undefined
   const listeners = new Set<(id: ReferenceFrameId | undefined) => void>()
@@ -55,8 +56,8 @@ export function createSpatialApi(): SpatialApi {
     get activeFrameId() {
       return activeFrameId
     },
-    listFrames: () => [...frames.values()],
-    getFrame: (id) => frames.get(id),
+    listFrames: () => [...frames.values()].map((entry) => entry.frame),
+    getFrame: (id) => frames.get(id)?.frame,
     registerFrame(frame) {
       // Issue #5：registry 存 frozen 深拷贝——调用方对象后续变化不影响空间事实
       const stored = freezeFrame({
@@ -64,18 +65,33 @@ export function createSpatialApi(): SpatialApi {
         originECEF: { ...frame.originECEF },
         basisECEF: { ...frame.basisECEF }
       })
-      frames.set(frame.id, stored)
+      // Issue #7：互斥注册——duplicate id fail-fast，无任何瞬时副作用
+      if (frames.has(frame.id)) {
+        throw new DuplicateRegistrationError('frame', frame.id)
+      }
+      const token: object = {}
+      frames.set(frame.id, { token, frame: stored })
+      let disposed = false
       return {
         dispose: () => {
+          if (disposed) return
+          disposed = true
+          // Issue #7：compare-and-delete——stale disposer 不得删除后来 owner 的 frame
+          if (frames.get(frame.id)?.token !== token) return
           frames.delete(frame.id)
+          // Issue #7-D：active frame 不允许指向不存在的 registry entry
+          if (activeFrameId === frame.id) {
+            activeFrameId = undefined
+            for (const cb of listeners) cb(undefined)
+          }
         }
       }
     },
     ensureEnuFrame(id, origin) {
       const existing = frames.get(id)
-      if (existing) return existing
+      if (existing) return existing.frame
       const frame = createEnuFrame(id, datum.toEllipsoidal(origin))
-      frames.set(id, frame)
+      frames.set(id, { token: {}, frame })
       return frame
     },
     setActiveFrame(id) {
@@ -125,7 +141,7 @@ export function createSpatialApi(): SpatialApi {
         '[spatial] no active reference frame. Call setActiveFrame() (site scope) or use geodetic/ECEF values directly (global scope).'
       )
     }
-    return frames.get(activeFrameId)!
+    return frames.get(activeFrameId)!.frame
   }
 
   return api

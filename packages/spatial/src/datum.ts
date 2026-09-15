@@ -13,19 +13,46 @@ export interface VerticalOffset {
   readonly meters: number
 }
 
+/**
+ * Issue #7：Foundation facts 互斥注册——重复 key fail-fast，
+ * 不修改原值、不产生事件副作用。
+ */
+export class DuplicateRegistrationError extends Error {
+  readonly key: string
+  constructor(what: string, key: string) {
+    super(
+      `[spatial] duplicate ${what} registration: "${key}"（Foundation facts 互斥注册，更新请走 app-owned API）`
+    )
+    this.name = 'DuplicateRegistrationError'
+    this.key = key
+  }
+}
+
 /** Register of known datum offsets (site config supplies the real values). */
 export class VerticalDatumRegistry {
-  private readonly offsets = new Map<string, number>()
+  // Issue #7：registration identity——disposer 绑定注册身份而非仅绑定 pair key
+  private readonly offsets = new Map<string, { token: object; meters: number }>()
 
   register(offset: VerticalOffset): () => void {
-    this.offsets.set(key(offset.from, offset.to), offset.meters)
+    const k = key(offset.from, offset.to)
+    // Issue #7：互斥注册——duplicate pair fail-fast，不修改原基准
+    if (this.offsets.has(k)) {
+      throw new DuplicateRegistrationError('vertical datum offset', k)
+    }
+    const token: object = {}
+    this.offsets.set(k, { token, meters: offset.meters })
+    let disposed = false
     return () => {
-      this.offsets.delete(key(offset.from, offset.to))
+      if (disposed) return
+      disposed = true
+      // Issue #7：compare-and-delete——stale disposer 不得删除后来 owner 的基准
+      if (this.offsets.get(k)?.token !== token) return
+      this.offsets.delete(k)
     }
   }
 
   get(from: VerticalReference, to: VerticalReference): number | undefined {
-    return this.offsets.get(key(from, to))
+    return this.offsets.get(key(from, to))?.meters
   }
 
   /**
@@ -41,7 +68,7 @@ export class VerticalDatumRegistry {
         `[spatial] no registered vertical offset from "${p.verticalReference}" to "ellipsoid". Register it via registerVerticalOffset() before using heights.`
       )
     }
-    return { ...p, heightMeters: p.heightMeters + offset, verticalReference: 'ellipsoid' as const }
+    return { ...p, heightMeters: p.heightMeters + offset.meters, verticalReference: 'ellipsoid' as const }
   }
 }
 

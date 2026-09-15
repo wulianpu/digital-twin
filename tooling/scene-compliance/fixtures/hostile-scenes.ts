@@ -417,3 +417,141 @@ export const zombieSelectionToggleInputAlias: SceneEntry = {
     }
   }
 }
+
+/** ---------------------------------------------------- Issue #7（registration ownership） */
+
+const SHADOW_BASE_SITE = {
+  id: 'site-compliance-a',
+  name: 'SHADOW',
+  origin: {
+    longitudeDegrees: 0,
+    latitudeDegrees: 0,
+    heightMeters: 99_999,
+    verticalReference: 'ellipsoid' as const
+  },
+  bounds: { south: 0, west: 0, north: 0, east: 0 }
+}
+
+/** shadow-foundation-site：同 key 注册被拒，unmount 后 app-owned baseline 完好 */
+export const shadowFoundationSite: SceneEntry = {
+  async mount(ctx) {
+    const world = ctx.world
+    try {
+      world.sites.register(SHADOW_BASE_SITE)
+      zombieWriteProbes['shadow-site-register'] = 'ALLOWED'
+    } catch (error) {
+      zombieWriteProbes['shadow-site-register'] =
+        error instanceof Error && error.name === 'DuplicateRegistrationError'
+          ? 'REJECTED'
+          : 'OTHER'
+    }
+    return {
+      unmount() {
+        // 读路径透传：teardown 后核对 app-owned baseline 完全一致
+        const after = world.sites.get('site-compliance-a')
+        const intact =
+          after !== undefined &&
+          after.name === '合规场址 A' &&
+          after.origin.heightMeters === 4.2
+        zombieWriteProbes['site-baseline-after'] = intact ? 'SAFE' : 'POLLUTED'
+      }
+    }
+  }
+}
+
+/** shadow-foundation-frame：同 id frame 注册被拒，坐标事实不被覆盖/删除 */
+export const shadowFoundationFrame: SceneEntry = {
+  async mount(ctx) {
+    const spatial = ctx.spatial
+    const baseline = spatial.ensureEnuFrame('frame:shadow-baseline', {
+      longitudeDegrees: 121.7821,
+      latitudeDegrees: 31.3622,
+      heightMeters: 4.2,
+      verticalReference: 'ellipsoid'
+    })
+    const baselineX = baseline.originECEF.x
+    try {
+      spatial.registerFrame({
+        id: 'frame:shadow-baseline',
+        originECEF: { x: 1e9, y: 1e9, z: 1e9 },
+        basisECEF: { xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1 }
+      })
+      zombieWriteProbes['shadow-frame-register'] = 'ALLOWED'
+    } catch (error) {
+      zombieWriteProbes['shadow-frame-register'] =
+        error instanceof Error && error.name === 'DuplicateRegistrationError'
+          ? 'REJECTED'
+          : 'OTHER'
+    }
+    void baselineX
+    return {
+      unmount() {
+        const after = spatial.getFrame('frame:shadow-baseline')
+        zombieWriteProbes['frame-baseline-after'] =
+          after !== undefined && after.originECEF.x === baselineX ? 'SAFE' : 'POLLUTED'
+      }
+    }
+  }
+}
+
+/** shadow-foundation-datum：同 pair datum 注册被拒，高度基准不被 shadow */
+export const shadowFoundationDatum: SceneEntry = {
+  async mount(ctx) {
+    const spatial = ctx.spatial
+    const d = spatial.registerVerticalOffset('chart-datum', 'ellipsoid', 2.34)
+    try {
+      spatial.registerVerticalOffset('chart-datum', 'ellipsoid', 9.99)
+      zombieWriteProbes['shadow-datum-register'] = 'ALLOWED'
+    } catch (error) {
+      zombieWriteProbes['shadow-datum-register'] =
+        error instanceof Error && error.name === 'DuplicateRegistrationError'
+          ? 'REJECTED'
+          : 'OTHER'
+    }
+    const converted = spatial.toEllipsoidal({
+      longitudeDegrees: 121.78,
+      latitudeDegrees: 31.36,
+      heightMeters: 10,
+      verticalReference: 'chart-datum' as never
+    })
+    zombieWriteProbes['datum-shadow-value'] =
+      Math.abs(converted.heightMeters - 12.34) < 1e-9 ? 'OK' : 'HIJACKED'
+    d.dispose() // scene 手工清理自己的 registration
+    return { unmount() {} }
+  }
+}
+
+/** stale-registration-disposer：旧 disposer 不得删除重注册后的新 registration */
+export const staleRegistrationDisposer: SceneEntry = {
+  async mount(ctx) {
+    const sites = ctx.world.sites
+    const first = sites.register({
+      id: 'stale-site',
+      name: 'first',
+      origin: {
+        longitudeDegrees: 0,
+        latitudeDegrees: 0,
+        heightMeters: 0,
+        verticalReference: 'ellipsoid'
+      },
+      bounds: { south: 0, west: 0, north: 1, east: 1 }
+    })
+    first.dispose()
+    const second = sites.register({
+      id: 'stale-site',
+      name: 'second',
+      origin: {
+        longitudeDegrees: 0,
+        latitudeDegrees: 0,
+        heightMeters: 0,
+        verticalReference: 'ellipsoid'
+      },
+      bounds: { south: 0, west: 0, north: 1, east: 1 }
+    })
+    first.dispose() // stale：token 不匹配，必须 no-op
+    zombieWriteProbes['stale-disposer'] =
+      sites.get('stale-site')?.name === 'second' ? 'SAFE' : 'POLLUTED'
+    second.dispose() // 自己的 registration 自己清理，baseline 回归
+    return { unmount() {} }
+  }
+}

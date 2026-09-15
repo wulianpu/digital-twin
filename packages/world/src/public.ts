@@ -19,6 +19,6 @@ export { entityKey, parseEntityKey, boundsContains, boundsCenter } from './types
 export { WorldClock } from './clock'
 export { createSelectionApi } from './selection'
 export type { SelectionApi } from './selection'
-export { createWorldApi } from './world'
+export { createWorldApi, DuplicateRegistrationError } from './world'
 export type { WorldApi, SiteRegistryApi, WorldTimeApi, CreateWorldOptions } from './world'
 export type { Disposable } from './lifecycle'

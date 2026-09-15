@@ -34,7 +34,7 @@ export {
   frameLocalToGeodetic,
   frameOriginDelta
 } from './frame'
-export { VerticalDatumRegistry } from './datum'
+export { VerticalDatumRegistry, DuplicateRegistrationError } from './datum'
 export type { VerticalOffset } from './datum'
 export {
   vec3,
