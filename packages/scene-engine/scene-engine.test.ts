@@ -3,6 +3,8 @@ import { FrameLoop } from './src/frameLoop'
 import { AdaptiveQuality, profileSettings } from './src/adaptive'
 import { TilesSystem, type TilesRendererLike } from './src/tiles'
 import { AssetLeaseManager, disposeObject3D, type AssetSource } from './src/resources'
+import { createGraphicsAccess } from './src/public'
+import type { EngineRuntime } from './src/runtime'
 import { createSceneViewDriver, siteExtentMeters } from './src/driver'
 import { ContextLossGuard } from './src/contextLoss'
 
@@ -511,3 +513,117 @@ describe('AssetLeaseManager 生命周期闭环（Issue #12）', () => {
     expect(textureB.dispose).toHaveBeenCalledTimes(1)
   })
 })
+
+/** ---------------- Issue #14：GraphicsAccess lazy boot 状态机闭环 */
+
+function makeRuntimeFactory() {
+  const runtimes: Array<{ disposed: number }> = []
+  const createRuntime = vi.fn(async (): Promise<EngineRuntime> => {
+    const rt = {
+      disposed: 0,
+      context: {
+        getDiagnostics: () => undefined,
+        suspend: () => {},
+        resume: () => {}
+      },
+      createMountRoot: () => ({ root: {}, detach: () => {} }),
+      dispose: () => {
+        rt.disposed++
+      },
+      suspend: () => {},
+      resume: () => {}
+    }
+    const full = rt as unknown as EngineRuntime
+    runtimes.push(rt)
+    return full
+  })
+  return { createRuntime, runtimes }
+}
+
+describe('GraphicsAccess lazy boot 状态机（Issue #14）', () => {
+  it('首次 boot transient reject → 第二次 use() 真实重试并可成功', async () => {
+    let calls = 0
+    const access = createGraphicsAccess(
+      { getViewport: () => document.createElement('div') },
+      {
+        createRuntime: async () => {
+          calls++
+          if (calls === 1) throw new Error('transient WebGL failure')
+          return makeRuntimeFactoryRt() as unknown as EngineRuntime
+        }
+      }
+    )
+    await expect(access.use()).rejects.toThrowError(/transient/)
+    expect(access.state).toBe('UNINITIALIZED') // 可重试，不是 poisoned
+    const ctx = await access.use()
+    expect(access.state).toBe('ACTIVE')
+    expect(ctx.root).toBeDefined()
+    expect(calls).toBe(2)
+    access.dispose()
+  })
+
+  it('并发 use() 共享同一 attempt（底层只 boot 一次）', async () => {
+    const { createRuntime, runtimes } = makeRuntimeFactory()
+    const access = createGraphicsAccess(
+      { getViewport: () => document.createElement('div') },
+      { createRuntime }
+    )
+    const [c1, c2] = await Promise.all([access.use(), access.use(), access.use()])
+    expect(createRuntime).toHaveBeenCalledTimes(1)
+    expect(runtimes).toHaveLength(1)
+    expect(c1.root).toBeDefined()
+    expect(c2.root).toBeDefined()
+    access.dispose()
+  })
+
+  it('use pending → dispose → late resolve：runtime exactly-once 回收，不复活 ACTIVE', async () => {
+    const { createRuntime, runtimes } = makeRuntimeFactory()
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const access = createGraphicsAccess(
+      { getViewport: () => document.createElement('div') },
+      {
+        createRuntime: async () => {
+          await gate
+          return createRuntime()
+        }
+      }
+    )
+    const usePromise = access.use()
+    access.dispose() // boot pending 期间 terminal teardown
+    expect(access.state).toBe('DISPOSED')
+
+    release() // late resolve：runtime 创建完成
+    await expect(usePromise).rejects.toThrowError() // aborted，不返回 live context
+    expect(runtimes[0]!.disposed).toBe(1) // exactly-once 回收
+    expect(access.currentContext).toBeUndefined() // 终态不变量
+    await expect(access.use()).rejects.toThrowError(/disposed/) // fail-fast
+    expect(access.state).toBe('DISPOSED') // 永不复活
+    expect(runtimes[0]!.disposed).toBe(1) // 不 double-dispose
+  })
+
+  it('dispose 后 use() fail-fast，不再触发新的 runtime creation', async () => {
+    const { createRuntime } = makeRuntimeFactory()
+    const access = createGraphicsAccess(
+      { getViewport: () => document.createElement('div') },
+      { createRuntime }
+    )
+    access.dispose()
+    access.dispose() // 幂等
+    await expect(access.use()).rejects.toThrowError(/disposed/)
+    expect(createRuntime).not.toHaveBeenCalled()
+    expect(access.currentContext).toBeUndefined()
+  })
+})
+
+function makeRuntimeFactoryRt() {
+  return {
+    context: { getDiagnostics: () => undefined, suspend: () => {}, resume: () => {} },
+    createMountRoot: () => ({ root: {}, detach: () => {} }),
+    dispose: () => {},
+    suspend: () => {},
+    resume: () => {}
+  }
+}

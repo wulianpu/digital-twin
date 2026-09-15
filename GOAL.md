@@ -462,3 +462,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑥benchmarks.md：Run #6 作废声明（宿主机重启未产出报告）+ 覆盖范围声明
   （2D+JS-heap ≠ 完整 M9 资源验收）+ Run #7 mixed 长跑启动记录。
   验证：pnpm verify 全绿、248/248 单测、compliance 40/40、e2e 10/10（含 stress）。
+
+- 2026-09-16 **Issue #14 修复（P1：MapAccess/GraphicsAccess lazy boot 状态机闭环）**：
+  ①attempt identity 模型（generation + bootAttempt{generation,promise}）：
+  同 generation 并发 use() 共享同一次 boot；boot reject 只按 identity 清理
+  本 attempt 的 pending slot（不误删后来 generation 的新 attempt），未 disposed
+  时回到可重试的 UNINITIALIZED——首次 transient 失败不再永久 poison；
+  ②terminal monotonicity：dispose() 幂等、generation++ 使全部 pending attempt
+  失去 commit authority；DISPOSED 永不复活；currentContext 永久 undefined；
+  use() 永久 fail-fast 不再触发 dynamic import/runtime creation；
+  ③每个 await 后 / destructive 副作用（Map 构造、runtime commit 写 WeakMap）
+  之前重校验 attempt：late-created Map 立即 remove、late runtime exactly-once
+  dispose，不写入 WeakMap/不返回 live context/root；MapAccess 增加
+  abortCurrentBoot 立即中止 style-ready 等待（不拖到 15s 兜底）；
+  ④internal-only boot factory seam（createGraphicsAccess deps.createRuntime）
+  支持确定性 deferred 竞态测试；map-engine 以 vi.mock('maplibre-gl') 注入；
+  ⑤测试 +8（graphics 4 + map 4：重试/并发共享/pending dispose/终态 fail-fast）。
+  验证：pnpm verify 全绿、255/255 单测、compliance 40/40、e2e 10/10。

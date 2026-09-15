@@ -25,16 +25,61 @@ import { createSceneViewDriver, siteExtentMeters } from './driver'
 /** Lazy GraphicsAccess: engine + three download only on first use() (§25). */
 const runtimes = new WeakMap<GraphicsAccess, EngineRuntime>()
 
-export function createGraphicsAccess(options: SceneEngineOptions): GraphicsAccess {
-  let state: SceneEngineState = 'UNINITIALIZED'
-  let bootPromise: Promise<EngineRuntime> | undefined
+/** Internal-only boot factory seam（Issue #14 方案 E）：确定性 deferred 竞态测试。 */
+export interface GraphicsAccessDeps {
+  createRuntime?: (options: SceneEngineOptions) => Promise<EngineRuntime>
+}
 
-  async function boot(): Promise<EngineRuntime> {
-    const mod = await import('./runtime')
-    const rt = await mod.createRuntime(options)
+/** use() 交付的 GraphicsContext 形状（runtime context + per-mount root）。 */
+type BootedGraphicsContext = Awaited<ReturnType<GraphicsAccess['use']>>
+
+export function createGraphicsAccess(
+  options: SceneEngineOptions,
+  deps: GraphicsAccessDeps = {}
+): GraphicsAccess {
+  let state: SceneEngineState = 'UNINITIALIZED'
+  let disposed = false
+  // Issue #14：attempt identity（generation）+ terminal monotonicity——
+  // 失败可重试（reject 只清本 attempt 的 pending slot）；
+  // dispose 后 DISPOSED 永不复活，late runtime exactly-once 回收。
+  let generation = 0
+  let bootAttempt: { generation: number; promise: Promise<BootedGraphicsContext> } | undefined
+
+  async function boot(attempt: number): Promise<EngineRuntime> {
+    try {
+      let rt: EngineRuntime
+      const create = deps.createRuntime
+      if (create) {
+        rt = await create(options)
+      } else {
+        const mod = await import('./runtime')
+        if (attempt !== generation || disposed) throw abortedError()
+        rt = await mod.createRuntime(options)
+      }
+      return commit(attempt, rt)
+    } catch (error) {
+      // #14-C：reject 只清属于本 attempt 的 pending slot（identity 比较）；
+      // 未 dispose 时回到可重试的 UNINITIALIZED。
+      if (bootAttempt && bootAttempt.generation === attempt) bootAttempt = undefined
+      if (!disposed) state = 'UNINITIALIZED'
+      throw error
+    }
+  }
+
+  function commit(attempt: number, rt: EngineRuntime): EngineRuntime {
+    // #14-B：destructive commit 前重校验 attempt——stale/disposed 时
+    // 迟到的 runtime 被 exactly-once dispose，不写入 WeakMap、不复活 state。
+    if (attempt !== generation || disposed) {
+      rt.dispose()
+      throw new Error('[scene-engine] boot attempt aborted (access disposed)')
+    }
     runtimes.set(access, rt)
     state = 'ACTIVE'
     return rt
+  }
+
+  function abortedError(): Error {
+    return new Error('[scene-engine] boot attempt aborted (access disposed)')
   }
 
   const access: GraphicsAccess = {
@@ -42,6 +87,7 @@ export function createGraphicsAccess(options: SceneEngineOptions): GraphicsAcces
       return state
     },
     get currentContext() {
+      if (disposed) return undefined // 终态不变量
       return runtimes.get(access)?.context
     },
   /**
@@ -50,14 +96,20 @@ export function createGraphicsAccess(options: SceneEngineOptions): GraphicsAcces
    * 其余能力（camera/renderer/environment/entities）为引擎级共享。
    */
   use() {
-    if (state === 'DISPOSED') {
+    if (disposed || state === 'DISPOSED') {
       return Promise.reject(new Error('[scene-engine] access disposed'))
     }
-    bootPromise ??= boot()
-    return bootPromise.then((rt) => {
+    // 同 generation 内并发 use() 共享同一次 boot attempt
+    if (bootAttempt && bootAttempt.generation === generation) {
+      return bootAttempt.promise
+    }
+    const attempt = ++generation
+    const promise = boot(attempt).then((rt) => {
       const mount = rt.createMountRoot()
       return { ...rt.context, root: mount.root }
     })
+    bootAttempt = { generation: attempt, promise }
+    return promise
   },
     applyQuality(profile: QualityProfile) {
       runtimes.get(access)?.adaptive.force(profile)
@@ -72,10 +124,16 @@ export function createGraphicsAccess(options: SceneEngineOptions): GraphicsAcces
       return runtimes.get(access)?.context.getDiagnostics()
     },
     dispose() {
-      runtimes.get(access)?.dispose()
-      runtimes.delete(access)
-      bootPromise = undefined
+      if (disposed) return // 幂等
+      disposed = true
       state = 'DISPOSED'
+      generation++ // 使所有 pending attempt 失去 commit authority
+      bootAttempt = undefined
+      const rt = runtimes.get(access)
+      if (rt) {
+        rt.dispose()
+        runtimes.delete(access)
+      }
     }
   }
   return access
