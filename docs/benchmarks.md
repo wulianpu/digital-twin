@@ -82,13 +82,35 @@ headless Chromium → 登录 → 300 轮 global-ships ⇄ stack-yard 切换 → 
   ②soak-run.mjs 改为 node 侧逐轮驱动 + 页面故障自动恢复（24h 必需健壮性）
   → **两项均已于 I9 修复并实测**（详见 I9-1/I9-2）。
 
-### Run #6 — 24h 墙钟长跑（正式验收执行中，2026-09-15 00:40 启动）
+### Run #6 — 24h 墙钟长跑（2026-09-15 00:40 启动；⚠️ 覆盖范围见下）
 
 - 执行器：I9-2 健壮化版本（node 侧逐轮驱动 + 页面故障自动重建）
 - 参数：`--url http://localhost:8080 --cycles 1152 --cycleIntervalSec 73`
   （1152 轮 × ≈74.5s ≈ 23.9h 墙钟；轮间隔已实测生效）
 - 报告：完成后自动写入 `soak-24h.json`，通过标准同 §71
-- 结果：待填（预计 2026-09-16 00:40 前后完成）
+- 结果：**作废（未产出报告）**——宿主机于 2026-09-15 深夜重启（colima/栈随之
+  停止），长跑进程中断且 `soak-24h.json` 未落盘
+- ⚠️ **覆盖范围声明（Issue #13）**：Run #6 的 workload 仅做 global-ships ⇄
+  stack-yard 场景切换、pass 判定仅依据 JS heap slope。即使完成并通过，其结论
+  也仅是「2D 场景切换 workload 下 JS heap 无持续增长」，
+  **不等价于 M9 的 GPU/asset/tile/frame-callback 资源 plateau 验收**。
+
+### Run #7 — 24h mixed-resource 墙钟长跑（Issue #13 升级版，执行中）
+
+- 启动：2026-09-16 00:50（colima/栈恢复后重新拉起）
+- 执行器：同 I9-2 版本 + Issue #13 升级：
+  - **mixed 场景**：global-ships(3D) → stack-yard(2D) → production(3D+GLTF)
+    → stack-yard(2D↔3D toggle) 循环重入——真实 SceneEngine/WebGL/
+    asset lease 生命周期进入验收路径
+  - **资源采样**：每轮经 `__twinSoakMetrics` 聚合 renderer
+    textures/geometries/programs、frameCallbacks、assetLeases、entityCount、
+    tilesBytes（不丢已有 diagnostics 字段）
+  - **验收语义（§71 Plateau-not-Zero）**：heap plateau + 每个资源 counter
+    slope ≤ 阈值（计数 >0.02/轮、tilesBytes >2KB/轮判泄漏）才 pass；
+    任一 counter 单调增长即 fail
+- 参数：`--url http://localhost:8080 --cycles 1152 --cycleIntervalSec 73 --out soak-24h.json`
+- 结果：待填（预计 2026-09-17 00:50 前后完成）
+- CI 短版：`tooling/e2e/tests/stress.spec.ts`（6 轮 mixed，随 e2e workflow 运行）
 
 ### 微基线（Node，M 系列；`pnpm bench`）
 

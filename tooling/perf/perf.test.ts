@@ -3,8 +3,11 @@ import {
   PerfCapture,
   SoakDriver,
   analyzePlateau,
+  analyzeResourcePlateaus,
+  DEFAULT_RESOURCE_THRESHOLDS,
   summarizeSamples,
-  type DiagnosticsSnapshot
+  type DiagnosticsSnapshot,
+  type SoakSample
 } from './src/index'
 
 function snapshot(overrides: Partial<DiagnosticsSnapshot> = {}): DiagnosticsSnapshot {
@@ -121,5 +124,86 @@ describe('SoakDriver / plateau（I5-3）', () => {
     const driver = new SoakDriver({ totalCycles: 3, runCycle })
     await driver.run()
     expect(runCycle).toHaveBeenCalledTimes(3)
+  })
+})
+
+
+/** ---------------- Issue #13：资源 plateau analyzer（intentional-leak 回归） */
+
+function resourceSamples(
+  frameCallbacks: (cycle: number) => number,
+  textures: (cycle: number) => number = () => 12,
+  cycles = 20
+): SoakSample[] {
+  return Array.from({ length: cycles }, (_, i) => ({
+    cycle: i + 1,
+    tMs: i * 1000,
+    heapMB: 10,
+    resources: {
+      frameCallbacks: frameCallbacks(i + 1),
+      textures: textures(i + 1)
+    }
+  }))
+}
+
+describe('Soak 资源 plateau gate（Issue #13 intentional-leak 回归）', () => {
+  it('每轮多留一个 frame callback（intentional leak）→ analyzer 判泄漏', () => {
+    const { plateaus, pass } = analyzeResourcePlateaus(
+      resourceSamples((cycle) => cycle),
+      DEFAULT_RESOURCE_THRESHOLDS
+    )
+    expect(pass).toBe(false)
+    expect(plateaus.frameCallbacks?.detected).toBe(false)
+    expect(plateaus.frameCallbacks?.slopePerCycle).toBeCloseTo(1, 3)
+    // 健康的 counter 不受影响
+    expect(plateaus.textures?.detected).toBe(true)
+  })
+
+  it('资源平稳（plateau 语义）→ pass；下降亦为健康', () => {
+    const stable = analyzeResourcePlateaus(
+      resourceSamples(() => 3, (cycle) => 12 - cycle * 0.1),
+      DEFAULT_RESOURCE_THRESHOLDS
+    )
+    expect(stable.pass).toBe(true)
+    expect(stable.plateaus.frameCallbacks?.detected).toBe(true)
+    expect(stable.plateaus.textures?.detected).toBe(true)
+  })
+
+  it('SoakDriver 端到端：泄漏 counter 使 report.pass = false', async () => {
+    // 直接构造驱动循环：每轮 frameCallbacks +1（scene-owned 资源泄漏）
+    let callbacks = 0
+    const leakDriver = new SoakDriver({
+      totalCycles: 12,
+      runCycle: async () => {
+        callbacks++
+      },
+      sampleHeap: () => 10,
+      sampleResources: () => ({ assetLeases: 0, frameCallbacks: callbacks })
+    })
+    const report = await leakDriver.run()
+    expect(report.resources.pass).toBe(false)
+    expect(report.pass).toBe(false)
+    expect(report.resources.plateaus.frameCallbacks?.slopePerCycle).toBeCloseTo(1, 3)
+
+    // 对照：无泄漏 → pass
+    const cleanDriver = new SoakDriver({
+      totalCycles: 12,
+      runCycle: async () => {},
+      sampleHeap: () => 10,
+      sampleResources: () => ({ assetLeases: 2, frameCallbacks: 3 })
+    })
+    const cleanReport = await cleanDriver.run()
+    expect(cleanReport.resources.pass).toBe(true)
+    expect(cleanReport.pass).toBe(true)
+  })
+
+  it('样本数 < 4 的 counter 不参与判定（warmup 噪声）', () => {
+    const sparse = analyzeResourcePlateaus([
+      { cycle: 1, tMs: 0, heapMB: 1, resources: { textures: 5 } },
+      { cycle: 2, tMs: 1, heapMB: 1, resources: { textures: 50 } },
+      { cycle: 3, tMs: 2, heapMB: 1, resources: { textures: 500 } }
+    ])
+    expect(sparse.plateaus.textures).toBeUndefined()
+    expect(sparse.pass).toBe(true)
   })
 })

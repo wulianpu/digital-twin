@@ -11,10 +11,19 @@ export type {
   PerfReport,
   PerfCaptureOptions
 } from './capture'
-export { SoakDriver, analyzePlateau, heapSlope } from './soak'
+export {
+  SoakDriver,
+  analyzePlateau,
+  analyzeResourcePlateaus,
+  heapSlope,
+  DEFAULT_RESOURCE_THRESHOLDS
+} from './soak'
 export type {
   SoakSample,
   SoakPlateau,
   SoakReport,
+  SoakResources,
+  ResourcePlateau,
+  ResourceThresholds,
   SoakDriverOptions
 } from './soak'

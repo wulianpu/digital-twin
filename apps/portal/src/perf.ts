@@ -1,4 +1,4 @@
-import { PerfCapture, SoakDriver, type PerfReport, type SoakReport } from '@twin/tooling-perf'
+import { PerfCapture, SoakDriver, type PerfReport, type SoakReport, type SoakResources } from '@twin/tooling-perf'
 import type { PortalFoundation } from './foundation'
 import type { SceneCoordinator } from './coordinator'
 
@@ -16,9 +16,11 @@ declare global {
     __twinSoakReport?: SoakReport
     __twinContextLossReport?: Record<string, unknown>
     __twinDebug?: Record<string, unknown>
-    /** A2: node 侧逐轮驱动（单轮场景切换 + heap 采样） */
+    /** A2: node 侧逐轮驱动（单轮混合场景切换 + heap 采样） */
     __twinSoakStep?: () => Promise<number | undefined>
     __twinSoakReset?: () => void
+    /** Issue #13：Engine/foundation 资源 diagnostics 聚合采样 */
+    __twinSoakMetrics?: () => SoakResources
     __vfxReady?: boolean
     __vfxFrozen?: boolean
   }
@@ -128,35 +130,88 @@ export function setupPerfAutomation(
     const intervalSec = Number(params.get('soakIntervalSec') ?? 0)
     void (async () => {
       await delay(4000)
-      const scenes = ['global-ships', 'stack-yard'] as const
+      // Issue #13：mixed 场景（真实 3D + 2D↔3D toggle + GLTF/asset 路径）
+      const scenes = ['global-ships', 'stack-yard', 'production', 'stack-yard'] as const
       const driver = new SoakDriver({
         totalCycles: cycles,
         runCycle: async (cycle) => {
-          await coordinator.select(scenes[cycle % scenes.length])
+          const scene = scenes[cycle % scenes.length]
+          await coordinator.select(scene)
           await delay(1500)
+          if (scene === 'stack-yard') {
+            const to3d = document.querySelector<HTMLButtonElement>('[data-view-toggle="graphics"]')
+            if (to3d) {
+              to3d.click()
+              await delay(2500)
+              document.querySelector<HTMLButtonElement>('[data-view-toggle="map"]')?.click()
+              await delay(1200)
+            }
+          }
         },
         sampleHeap: heapMB,
+        sampleResources: () => {
+          const d = foundation.graphicsAccess.getDiagnostics()
+          return {
+            textures: d?.renderer.textures,
+            geometries: d?.renderer.geometries,
+            programs: d?.renderer.programs,
+            frameCallbacks: d?.frameCallbacks,
+            assetLeases: d?.assetLeases,
+            entityCount: d?.entityCount,
+            tilesBytes: d?.tiles?.cachedBytes,
+            jsHeapMB: d?.jsHeapMB ?? heapMB()
+          }
+        },
         ...(intervalSec > 0 ? { cycleIntervalMs: intervalSec * 1000 } : {})
       })
       const report = await driver.run()
       window.__twinSoakReport = report
-      console.info('[perf] soak 完成', report.plateau)
+      console.info('[perf] soak 完成', report.plateau, report.resources)
       if (params.has('download')) downloadJson(`soak-${cycles}.json`, report)
     })()
   }
 
-  // A2: node 侧逐轮驱动接口（soak-run.mjs 崩溃恢复式 24h 执行器）
+  // A2: node 侧逐轮驱动接口（soak-run.mjs 崩溃恢复式 24h 执行器）。
+  // Issue #13：mixed 场景——真实 3D 生命周期（global-ships / production 均挂载
+  // GraphicsEngine，覆盖 GLTF/asset 路径）+ stack-yard 2D↔3D toggle 重入。
   if (params.has('soakStep')) {
     let stepScene = 0
+    const mixedScenes = ['global-ships', 'stack-yard', 'production', 'stack-yard'] as const
     window.__twinSoakStep = async () => {
-      const scenes = ['global-ships', 'stack-yard'] as const
-      await coordinator.select(scenes[stepScene % scenes.length])
+      const scene = mixedScenes[stepScene % mixedScenes.length]
+      await coordinator.select(scene)
       stepScene++
       await delay(1500)
+      // stack-yard：真实 2D↔3D toggle（SceneEngine 创建/销毁重入生命周期）
+      if (scene === 'stack-yard') {
+        const to3d = document.querySelector<HTMLButtonElement>('[data-view-toggle="graphics"]')
+        if (to3d) {
+          to3d.click()
+          await delay(2500)
+          const to2d = document.querySelector<HTMLButtonElement>('[data-view-toggle="map"]')
+          to2d?.click()
+          await delay(1200)
+        }
+      }
       return heapMB()
     }
     window.__twinSoakReset = () => {
       stepScene = 0
+    }
+    // Issue #13：Engine/foundation diagnostics 聚合采样（perf/soak 聚合层
+    // 不丢弃已有 renderer/asset/tile 资源字段）
+    window.__twinSoakMetrics = () => {
+      const d = foundation.graphicsAccess.getDiagnostics()
+      return {
+        textures: d?.renderer.textures,
+        geometries: d?.renderer.geometries,
+        programs: d?.renderer.programs,
+        frameCallbacks: d?.frameCallbacks,
+        assetLeases: d?.assetLeases,
+        entityCount: d?.entityCount,
+        tilesBytes: d?.tiles?.cachedBytes,
+        jsHeapMB: d?.jsHeapMB ?? heapMB()
+      }
     }
   }
 

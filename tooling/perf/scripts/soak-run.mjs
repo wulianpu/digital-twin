@@ -103,6 +103,17 @@ async function stepCycle() {
   return page.evaluate(() => window.__twinSoakStep())
 }
 
+// Issue #13：Engine/foundation 资源 diagnostics 聚合采样
+// （renderer textures/geometries/programs、frameCallbacks、assetLeases、tiles）
+async function sampleResources() {
+  try {
+    if (!page || page.isClosed()) return undefined
+    return await page.evaluate(() => window.__twinSoakMetrics?.())
+  } catch {
+    return undefined
+  }
+}
+
 const startedAt = Date.now()
 const samples = []
 let consecutiveFailures = 0
@@ -110,8 +121,10 @@ let consecutiveFailures = 0
 for (let cycle = 1; cycle <= cycles; cycle++) {
   let error
   let heapMB
+  let resources
   try {
     heapMB = await stepCycle()
+    resources = await sampleResources()
     consecutiveFailures = 0
   } catch (e) {
     error = String(e?.message ?? e).slice(0, 200)
@@ -125,6 +138,7 @@ for (let cycle = 1; cycle <= cycles; cycle++) {
     cycle,
     tMs: Date.now() - startedAt,
     heapMB,
+    ...(resources ? { resources } : {}),
     ...(error !== undefined ? { error } : {})
   })
   if (cycle % 25 === 0) {
@@ -139,22 +153,68 @@ await browser.close()
 
 const completed = samples.filter((s) => !s.error).length
 const plateau = analyze(samples)
+
+// Issue #13：资源 counter plateau 判定（与 in-page SoakDriver 相同阈值语义）
+const THRESHOLDS = {
+  textures: 0.02, geometries: 0.02, programs: 0.01,
+  frameCallbacks: 0.02, assetLeases: 0.02, entityCount: 0.05, tilesBytes: 2048
+}
+function slopeOf(pts) {
+  const n = pts.length
+  if (n < 2) return Number.NaN
+  const mx = pts.reduce((a, p) => a + p.x, 0) / n
+  const my = pts.reduce((a, p) => a + p.y, 0) / n
+  let num = 0
+  let den = 0
+  for (const p of pts) {
+    num += (p.x - mx) * (p.y - my)
+    den += (p.x - mx) ** 2
+  }
+  return den === 0 ? Number.NaN : num / den
+}
+const resourcePlateaus = {}
+let resourcesPass = true
+for (const [key, threshold] of Object.entries(THRESHOLDS)) {
+  const pts = []
+  for (const s of samples) {
+    if (s.error) continue
+    const v = s.resources?.[key]
+    if (typeof v === 'number') pts.push({ x: s.cycle, y: v })
+  }
+  if (pts.length < 4) continue
+  const slope = slopeOf(pts)
+  const detected = Number.isFinite(slope) && slope <= threshold
+  if (!detected) {
+    resourcesPass = false
+    console.error(`[soak] 资源泄漏: ${key} slope=${slope.toFixed(4)}/轮 > ${threshold}`)
+  }
+  resourcePlateaus[key] = {
+    slopePerCycle: Math.round(slope * 1e6) / 1e6,
+    detected,
+    thresholdPerCycle: threshold,
+    samples: pts.length
+  }
+}
+
 const pass =
   completed === cycles &&
   samples.every((s) => !s.error) &&
-  plateau.detected === true
+  plateau.detected === true &&
+  resourcesPass === true
 
 const summary = {
   cycles: `${completed}/${cycles}`,
   durationMs: Date.now() - startedAt,
+  scenario: 'mixed: global-ships(3D) / stack-yard(2D↔3D toggle) / production(3D+GLTF) 重入循环',
   plateau,
+  resources: { plateaus: resourcePlateaus, pass: resourcesPass },
   firstHeapMB: samples[0]?.heapMB,
   lastHeapMB: samples.at(-1)?.heapMB,
   errors: samples.filter((s) => s.error).length,
   pass
 }
 
-writeFileSync(outPath, JSON.stringify({ summary, samples, plateau }, null, 2))
+writeFileSync(outPath, JSON.stringify({ summary, samples, plateau, resources: summary.resources }, null, 2))
 console.log('[soak] summary:', JSON.stringify(summary))
 console.log(`[soak] report written: ${outPath}`)
 

@@ -444,3 +444,21 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤foundation teardown 接线 assets.dispose（退出/会话过期路径真实生效）；
   ⑥测试 +5（失败驱逐与重试 / 并发失败 / dispose 语义 / pending 竞态 / GPU 深度回收）。
   验证：pnpm verify 全绿、244/244 单测、compliance 40/40、e2e 9/9。
+
+- 2026-09-16 **Issue #13 修复（P1：soak 升级为 mixed-resource M9 验收）**：
+  ①soak workload 升级 mixed 场景：global-ships(3D) → stack-yard(2D) →
+  production(3D+GLTF) → stack-yard(2D↔3D toggle) 循环重入——真实
+  SceneEngine/WebGL/asset lease 生命周期进入验收路径（?soak 与 soakStep 两通道）；
+  ②SoakSample 扩展 resources（textures/geometries/programs/frameCallbacks/
+  assetLeases/entityCount/tilesBytes）——已有 GraphicsDiagnostics 字段在
+  perf/soak 聚合层不再丢弃（perf.ts __twinSoakMetrics / soak-run.mjs 采样）；
+  ③验收语义（§71 Plateau-not-Zero）：每个 counter 最小二乘斜率 ≤ 阈值
+  （计数 >0.02/轮、tilesBytes >2KB/轮判泄漏），pass = 完成+无错+heap plateau+
+  全部资源 plateau；Scene-owned counter 泄漏即 fail，shared cache 用 plateau；
+  ④intentional-leak deterministic 回归：每轮 +1 frameCallback → analyzer fail
+  （含 SoakDriver 端到端 report.pass=false）；
+  ⑤CI 短版：tooling/e2e/tests/stress.spec.ts 6 轮 mixed 真实浏览器 stress
+  （e2e workflow 内 ~28s）；
+  ⑥benchmarks.md：Run #6 作废声明（宿主机重启未产出报告）+ 覆盖范围声明
+  （2D+JS-heap ≠ 完整 M9 资源验收）+ Run #7 mixed 长跑启动记录。
+  验证：pnpm verify 全绿、248/248 单测、compliance 40/40、e2e 10/10（含 stress）。
