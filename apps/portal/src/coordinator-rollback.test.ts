@@ -472,3 +472,127 @@ describe('SceneCoordinator 竞态：permission-denied 参与 Last Selection Wins
     expect(handles['scene-a']![1]!.unmount).not.toHaveBeenCalled() // 回滚成功不被回收
   })
 })
+
+/** ------------------------------------ #10-r2（复审）：active ownership 恒等式 */
+
+function makeGateRaceHost() {
+  let releaseUnmount!: () => void
+  const gate = new Promise<void>((r) => {
+    releaseUnmount = r
+  })
+  const base = makeRaceHost()
+  const host = base.host as unknown as {
+    unmount: ReturnType<typeof vi.fn>
+    mount: ReturnType<typeof vi.fn>
+  }
+  // 仅第 2 次及以后的 unmount（B 事务卸载 A 的 destructive 窗口）被门控；
+  // 第 1 次是 A 自身事务的 unmount（无当前挂载，立即返回）
+  let unmountCalls = 0
+  host.unmount.mockImplementation(async () => {
+    unmountCalls += 1
+    if (unmountCalls >= 2) await gate
+    return { errors: [], timedOut: false }
+  })
+  return { ...base, releaseUnmount }
+}
+
+describe('SceneCoordinator：active ownership 恒等式与补偿（#10-r2）', () => {
+  it('A active → B mount pending → select A：A 真实恢复，stale B 被回收', async () => {
+    const catalog: SceneDefinition[] = [
+      { id: 'scene-a', name: 'A', load: async () => entryOk() },
+      { id: 'scene-b', name: 'B', load: async () => entryOk() }
+    ]
+    const { host, handles, last } = makeRaceHost()
+    const coordinator = new SceneCoordinator(host, catalog)
+
+    // A active
+    const pA = coordinator.select('scene-a')
+    await flush()
+    last('scene-a').resolve()
+    await pA
+
+    // B：A 已被本事务 unmount（ownership 已清），B.mount pending
+    const pB = coordinator.select('scene-b')
+    await flush()
+    expect(coordinator.activeSceneId).toBeUndefined() // 恒等式：A 已卸载即不报告
+
+    // 用户重选 A → 必须真实走 mount（不得被 stale same-scene guard 吞掉）
+    const pA2 = coordinator.select('scene-a')
+    await flush()
+    handles['scene-a']!.at(-1)!.resolve()
+    await pA2
+    expect(coordinator.state).toMatchObject({ kind: 'active', sceneId: 'scene-a' })
+
+    // B 晚到成功 → stale：回收，不覆盖 A
+    last('scene-b').resolve()
+    await pB
+    await flush()
+
+    expect(coordinator.state).toMatchObject({ kind: 'active', sceneId: 'scene-a' })
+    expect(last('scene-b').unmount).toHaveBeenCalledTimes(1)
+  })
+
+  it('A active → B unmount pending → C denied：补偿恢复 A，denied 后当前场景仍运行', async () => {
+    const catalog = deniedCatalog()
+    const { host, handles, last, releaseUnmount } = makeGateRaceHost()
+    const coordinator = new SceneCoordinator(host, catalog, { permissions: () => [] })
+
+    // A active
+    const pA = coordinator.select('scene-a')
+    await flush()
+    handles['scene-a']![0]!.resolve()
+    await pA
+
+    // B 事务进入 host.unmount(A) pending（destructive 窗口）
+    const pB = coordinator.select('scene-b')
+    await flush()
+
+    // C denied（noop intent）
+    const pC = coordinator.select('scene-c')
+    await pC
+    expect(coordinator.state).toMatchObject({ kind: 'denied', sceneId: 'scene-c' })
+
+    // 放行旧 unmount → B stale → 补偿恢复 A
+    releaseUnmount()
+    await flush()
+    handles['scene-a']![1]!.resolve()
+    await pB
+    await flush()
+
+    expect(coordinator.state).toMatchObject({ kind: 'active', sceneId: 'scene-a' })
+    expect(coordinator.activeSceneId).toBe('scene-a')
+    void last
+  })
+
+  it('rollback 双失败：ownership 清除，重选 previous 可真正恢复', async () => {
+    const catalog = deniedCatalog()
+    const { host, handles } = makeRaceHost()
+    const coordinator = new SceneCoordinator(host, catalog, { permissions: () => [] })
+
+    // A active
+    const pA = coordinator.select('scene-a')
+    await flush()
+    handles['scene-a']![0]!.resolve()
+    await pA
+
+    // B mount fail → rollback A（第二个 handle）也 fail → ERROR(B) + ownership 清除
+    const pB = coordinator.select('scene-b')
+    await flush()
+    handles['scene-b']![0]!.reject(new Error('boot failed'))
+    await flush()
+    handles['scene-a']![1]!.reject(new Error('rollback failed'))
+    await pB
+    await flush()
+
+    expect(coordinator.state).toMatchObject({ kind: 'error', sceneId: 'scene-b' })
+    expect(coordinator.activeSceneId).toBeUndefined()
+
+    // 重选 A：不得命中 stale same-scene guard，必须真正重试 mount
+    const pA2 = coordinator.select('scene-a')
+    await flush()
+    expect(handles['scene-a']!.length).toBe(3) // 第 3 次 host.mount(A) 真实发生
+    handles['scene-a']![2]!.resolve()
+    await pA2
+    expect(coordinator.state).toMatchObject({ kind: 'active', sceneId: 'scene-a' })
+  })
+})

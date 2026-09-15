@@ -384,3 +384,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④deferred 竞态测试 +4（B.load/B.mount pending 后 denied 的 stale 丢弃、
   ownership 保持、rollback continuity）。
   验证：pnpm verify 全绿、225/225 单测、compliance 40/40、e2e 9/9。
+
+- 2026-09-15 **Issue #10 二次复审修复（P1：active 恒等式 + stale destructive-unmount 补偿）**：
+  ①active 恒等式落地：`active !== undefined ⇒ mount.state === 'active'`——
+  previous 连同 mount identity 一起快照，`host.unmount()` 完成后按 identity
+  清除 ownership（clearActiveIf），active 不再兼任已卸载 previous 的别名；
+  same-scene guard 因此不再吞掉对已卸载场景的重选；
+  ②latestIntent 记录（mount / noop）+ stale-after-destructive-unmount **补偿语义**：
+  stale 事务在卸载完成后不再直接 return——最新 intent 会 mount 新 target 则交接；
+  最新 intent 是 noop（denied / same-scene）则 reconcile 恢复 previous 运行
+  （提交前再次检查 intent，veto 时卸掉补偿 mount；reconcile 串行化防并发争抢）；
+  ③rollback stale-success 按 intent 分流：mount intent → 回收 prevMount（原语义）；
+  noop intent → ownership 直接转移（避免卸了再装的抖动）；
+  rollback 双失败 → `active = undefined`，重选 previous 不再被 stale guard 吞掉；
+  ④deferred 测试 +4（重选恢复 / unmount-pending denied 补偿 / 双失败重试 /
+  **真实 SceneHost** 集成——Coordinator ownership 与 Host activeMount 全程一致）。
+  验证：pnpm verify 全绿、229/229 单测、compliance 40/40、e2e 9/9。
