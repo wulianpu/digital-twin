@@ -550,3 +550,16 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤测试 +7（ECEF anchor ×2 + 不 reparent + marker ownership/位置/朝向 +
   移除与 dispose 全链路 ×2）。
   验证：pnpm verify 全绿、275/275 单测、compliance 40/40、e2e 10/10。
+
+- 2026-09-16 **Issue #17 二次复审修复（P1：GLOBAL floating-origin 双重 -p + Picking 根不一致）**：
+  ①采纳方案2——新增独立 `GlobalWorldRoot`（唯一 -camera shift 层级）：
+  earth、GlobalSceneRoots（mount container）均在其下，只继承一次 -p；
+  删除 `earth.applyCameraOffset` 调用（同一 ECEF scene point 只减一次 camera
+  pose，杜绝 ancestor+descendant 双重 -p 把 Scene object 推到地球半径级距离）；
+  EnvironmentSystem 在 GLOBAL 模式改挂 globalWorldRoot（保持原 shift 行为）；
+  ②PickingSystem raycast 根改为实际 SceneMountContainer
+  （GLOBAL→globalSceneRoots / SITE→sceneRoots）——GLOBAL Scene 对象重新可拾取，
+  且不把 engine-owned 球体/环境纳入候选树；
+  ③回归测试 +3（GLOBAL pick 覆盖 + 旧写死 sceneRoots 行为暴露 + SITE 路径保护；
+  层级 matrixWorld 自 scene 根更新）。
+  验证：pnpm verify 全绿、278/278 单测、compliance 40/40、e2e 10/10。

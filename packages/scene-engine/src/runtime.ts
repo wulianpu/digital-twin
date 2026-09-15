@@ -75,6 +75,15 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
   const baseWorldRoot = new THREE.Group()
   baseWorldRoot.name = 'BaseWorldRoot'
   scene.add(baseWorldRoot)
+  // Issue #17-r2（方案2）：GLOBAL 独立 floating-origin 层级——唯一 -camera
+  // shift 的根。earth 与 global mount container 都在其下，只继承一次 -p；
+  // 杜绝 ancestor(baseWorldRoot) + descendant(earth.root) 双重 -p 的回归。
+  const globalWorldRoot = new THREE.Group()
+  globalWorldRoot.name = 'GlobalWorldRoot'
+  scene.add(globalWorldRoot)
+  const globalSceneRoots = new THREE.Group()
+  globalSceneRoots.name = 'GlobalSceneRoots'
+  globalWorldRoot.add(globalSceneRoots)
 
   // 问题3：per-mount SceneMountRoot 容器——每个 mount 独立 root，
   // teardown 时可无条件 detach（§25 / Issue #1 问题3）。
@@ -91,8 +100,12 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
   )
 
   const frameLoop = new FrameLoop()
-  const environment = new EnvironmentSystem(baseWorldRoot, quality, options)
-  const earth = globalMode ? new GlobalEarthSystem(baseWorldRoot) : undefined
+  const environment = new EnvironmentSystem(
+    globalMode ? globalWorldRoot : baseWorldRoot,
+    quality,
+    options
+  )
+  const earth = globalMode ? new GlobalEarthSystem(globalWorldRoot) : undefined
   const tiles = new TilesSystem(options.tiles)
 
   // I4-3：配置化 tileset 接入——唯一入口仍是 TilesSystem（§48 禁止 Scene
@@ -120,7 +133,9 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
 
   const picking = new PickingSystem(
     renderer.domElement,
-    () => sceneRoots,
+    // Issue #17-r2：raycast 实际的 SceneMountContainer——GLOBAL 模式下
+    // mount roots 挂在 globalSceneRoots（而非 sceneRoots），保证可拾取
+    () => (earth ? globalSceneRoots : sceneRoots),
     () => camera
   )
 
@@ -154,10 +169,11 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     orbit.cameraPose(orbitPose)
     const p = orbitPose.position
     if (globalMode && earth) {
-      // Camera-relative ECEF (§37.2): shift the world against the camera.
-      earth.applyCameraOffset(p)
+      // Camera-relative ECEF (§37.2, Issue #17-r2)：唯一 -camera shift 层级
+      // 是 globalWorldRoot——earth 与 Global SceneMountContainer 各只继承一次；
+      // 同一 ECEF scene point 只减一次 camera pose（禁止双重 -p）。
       worldOffset.set(-p.x, -p.y, -p.z)
-      baseWorldRoot.position.copy(worldOffset)
+      globalWorldRoot.position.copy(worldOffset)
       camera.position.set(p.x + worldOffset.x, p.y + worldOffset.y, p.z + worldOffset.z)
     } else {
       const dist2 = p.x * p.x + p.y * p.y + p.z * p.z
@@ -290,7 +306,7 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     // shift 的正确层级），Scene 对象无需逃逸出 mount subtree 即可跟随地球；
     // detach root 仍是 mount teardown 的无条件回收路径。SITE 模式挂 sceneRoots。
     if (earth) {
-      earth.root.add(root)
+      globalSceneRoots.add(root)
     } else {
       sceneRoots.add(root)
     }
@@ -321,6 +337,7 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
       earth?.dispose()
       baseWorldRoot.clear()
       sceneRoots.clear()
+      globalWorldRoot.clear()
       scene.clear()
       renderer.dispose()
       renderer.domElement.remove()

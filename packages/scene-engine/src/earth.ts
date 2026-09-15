@@ -35,11 +35,6 @@ export class GlobalEarthSystem implements GlobalEnvironmentApi {
     object.position.set(ecefMeters.x / 1000, ecefMeters.z / 1000, -ecefMeters.y / 1000)
   }
 
-  /** Camera-relative shift: keep the camera near the origin (§37.2). */
-  applyCameraOffset(cameraEcefKm: Vec3d): void {
-    this.root.position.set(-cameraEcefKm.x, -cameraEcefKm.y, -cameraEcefKm.z)
-  }
-
   /** Scene km -> ECEF meters for the current frame (camera position). */
   static sceneToEcefMeters(p: Vec3d): Vec3d {
     // Scene axes: x=X, y=Z, z=-Y (so that Y-up rendering matches ECEF Z-up).
