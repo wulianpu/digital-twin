@@ -371,3 +371,16 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤deferred Promise 确定性竞态测试 +7（load/mount/rollback 三路径成功与失败、
   controller identity、host 复活防线 ×2）。
   验证：pnpm verify 全绿、221/221 单测、compliance 40/40、e2e 9/9。
+
+- 2026-09-15 **Issue #10 修复（P1：permission-denied 不参与 Last Selection Wins + active ownership 丢失）**：
+  ①selection intent invalidation 提到所有 preflight 之前——permission-denied
+  也是一次新选择，generation 先递增、旧 pending 全部失效，再走 same-scene
+  守卫与权限校验（unknown scene 除外并注明契约）；
+  ②ActiveScene ownership 与 transition/result state 分离：`active` 字段单独
+  维护当前真正持有 mount 的场景，`activeSceneId` getter 改从 ownership 取——
+  denied/loading 过渡态不再丢失 active 真值，Coordinator/Pinia/Host 三处一致；
+  ③denied 分支不产生任何 unmount/mount（当前场景继续运行），previous 从
+  ownership 取——`A active → C denied → B fail` 仍按 §19 回滚到 A；
+  ④deferred 竞态测试 +4（B.load/B.mount pending 后 denied 的 stale 丢弃、
+  ownership 保持、rollback continuity）。
+  验证：pnpm verify 全绿、225/225 单测、compliance 40/40、e2e 9/9。

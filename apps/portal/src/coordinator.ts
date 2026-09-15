@@ -25,11 +25,22 @@ export interface SceneCoordinatorOptions {
  * with AbortController + generation id so that **last selection wins**:
  * rapid A→B→C switches cancel the pending loads and never mount stale scenes.
  * Failure rolls the state back instead of killing the portal.
+ *
+ * #10：active ownership（当前真正持有 mount 的场景）与 transition/result
+ * state（loading/denied/error）分离——denied 不丢 active ownership，
+ * 当前场景继续运行且后续切换仍可回滚（§19）。
  */
+interface ActiveScene {
+  definition: SceneDefinition
+  sceneId: SceneId
+  mount: HostMount
+}
+
 export class SceneCoordinator {
   private generation = 0
   private loadControllers = new Map<SceneId, AbortController>()
   private _state: CoordinatorState = { kind: 'idle' }
+  private active: ActiveScene | undefined
 
   constructor(
     private readonly host: SceneHost,
@@ -41,8 +52,9 @@ export class SceneCoordinator {
     return this._state
   }
 
+  /** 当前实际拥有 mount 的场景（denied/loading 等过渡态不丢失）。 */
   get activeSceneId(): SceneId | undefined {
-    return this._state.kind === 'active' ? this._state.sceneId : undefined
+    return this.active?.sceneId
   }
 
   get(sceneId: SceneId): SceneDefinition | undefined {
@@ -58,36 +70,17 @@ export class SceneCoordinator {
   async select(sceneId: SceneId, options: { force?: boolean } = {}): Promise<void> {
     const definition = this.get(sceneId)
     if (!definition) {
+      // unknown scene 是编程错误而非用户选择 intent，不参与 generation 失效
       this.options.onError?.(new Error(`unknown scene "${sceneId}"`), sceneId)
-      return
-    }
-    // force：会话范围（站点）变化时，App 决定重跑当前场景（§"App decides
-    // what to run"）——绕过同场景守卫，仍走完整切换事务（§11）。
-    if (
-      !options.force &&
-      this._state.kind === 'active' &&
-      this._state.sceneId === sceneId
-    ) {
-      return
-    }
-
-    // I2-2: 强制权限边界——无权限时绝不触碰 load / host.mount。
-    if (
-      this.options.permissions &&
-      !canEnter(definition, this.options.permissions())
-    ) {
-      this.options.onError?.(
-        new Error(`permission denied for scene "${sceneId}"`),
-        sceneId
-      )
-      this.setState({ kind: 'denied', sceneId })
       return
     }
 
     // Last selection wins: invalidate every pending switch (§11).
+    // #10-A：selection intent invalidation 必须在所有 preflight 之前——
+    // permission-denied 也是一次新的用户选择，同样使更早的 pending 失效。
+    // generation 是 stale-result suppression 的唯一 commit authority：
+    // 每个 await 之后、每次 commit/onError 之前都要重查。
     const generation = ++this.generation
-    // 问题4-3（#3 复审）：generation 是 stale-result suppression 的唯一
-    // commit authority——每个 await 之后、每次 commit/onError 之前都要重查。
     const isCurrent = (): boolean => generation === this.generation
     for (const controller of this.loadControllers.values()) controller.abort()
     this.loadControllers.clear()
@@ -101,12 +94,32 @@ export class SceneCoordinator {
       }
     }
 
-    // 问题4：previous snapshot 必须在 setState(loading) **之前**保存——
-    // setState 之后 _state.kind 变为 'loading'，previous 永远取不到
-    const previous =
-      this._state.kind === 'active'
-        ? { definition: this.get(this._state.sceneId)!, sceneId: this._state.sceneId }
-        : undefined
+    // force：会话范围（站点）变化时，App 决定重跑当前场景（§"App decides
+    // what to run"）——绕过同场景守卫，仍走完整切换事务（§11）。
+    if (!options.force && this.active?.sceneId === sceneId) {
+      releaseLoadController()
+      return
+    }
+
+    // I2-2: 强制权限边界——无权限时绝不触碰 load / host.mount。
+    // #10-C：denied 不改变 active ownership——当前场景继续运行。
+    if (
+      this.options.permissions &&
+      !canEnter(definition, this.options.permissions())
+    ) {
+      releaseLoadController()
+      this.options.onError?.(
+        new Error(`permission denied for scene "${sceneId}"`),
+        sceneId
+      )
+      this.setState({ kind: 'denied', sceneId })
+      return
+    }
+
+    // #10-B：previous 从 active ownership 取——denied 等过渡态不丢回滚连续性
+    const previous = this.active
+      ? { definition: this.active.definition, sceneId: this.active.sceneId }
+      : undefined
 
     this.setState({ kind: 'loading', target: sceneId })
 
@@ -166,6 +179,11 @@ export class SceneCoordinator {
             await prevMount.unmount().catch(() => {})
             return
           }
+          this.active = {
+            definition: previous.definition,
+            sceneId: previous.sceneId,
+            mount: prevMount
+          }
           this.setState({ kind: 'active', sceneId: previous.sceneId, mount: prevMount })
           this.options.onError?.(mountError, sceneId)
           return
@@ -182,6 +200,7 @@ export class SceneCoordinator {
     }
 
     releaseLoadController()
+    this.active = { definition, sceneId, mount }
     this.setState({ kind: 'active', sceneId, mount })
   }
 

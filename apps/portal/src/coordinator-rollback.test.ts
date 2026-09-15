@@ -357,3 +357,118 @@ describe('SceneCoordinator 竞态：stale 异步结果不得覆盖最新选择�
     expect(controllers.loadControllers.size).toBe(0)
   })
 })
+
+/** ------------------------------------------------------ #10：permission-denied 竞态 */
+
+function deniedCatalog(): Array<SceneDefinition & { permissions?: readonly string[] }> {
+  return [
+    { id: 'scene-a', name: 'A', load: async () => entryOk() },
+    { id: 'scene-b', name: 'B', load: async () => entryOk() },
+    { id: 'scene-c', name: 'C', permissions: ['secret'], load: async () => entryOk() }
+  ]
+}
+
+describe('SceneCoordinator 竞态：permission-denied 参与 Last Selection Wins（#10）', () => {
+  it('B.load pending → select C denied → B.load 晚到成功：不得 mount/commit，denied 保持', async () => {
+    const bLoad = deferred<SceneEntry>()
+    const catalog: SceneDefinition[] = [
+      { id: 'scene-b', name: 'B', load: () => bLoad.promise },
+      { id: 'scene-c', name: 'C', permissions: ['secret'], load: async () => entryOk() }
+    ]
+    const { host, handles } = makeRaceHost()
+    const onError = vi.fn()
+    const coordinator = new SceneCoordinator(host, catalog, {
+      permissions: () => [],
+      onError
+    })
+
+    const pB = coordinator.select('scene-b') // gen1：B.load pending
+    const pC = coordinator.select('scene-c') // gen2：denied（permission preflight 之前已失效 gen1）
+    await pC
+    expect(coordinator.state).toMatchObject({ kind: 'denied', sceneId: 'scene-c' })
+
+    // B.load 晚到成功 → stale：不得进入 host.mount，更不得 commit
+    bLoad.resolve(entryOk())
+    await pB
+    await flush()
+
+    expect(coordinator.state).toMatchObject({ kind: 'denied', sceneId: 'scene-c' })
+    expect(handles['scene-b']).toBeUndefined()
+    expect(onError).toHaveBeenCalledTimes(1) // 仅 denied 本身的一次
+    expect(onError.mock.calls[0]![1]).toBe('scene-c')
+  })
+
+  it('B.mount pending → select C denied → B.mount 晚到成功：stale handle 先 teardown 再丢弃', async () => {
+    const catalog = deniedCatalog()
+    const { host, handles, last } = makeRaceHost()
+    const coordinator = new SceneCoordinator(host, catalog, { permissions: () => [] })
+
+    const pB = coordinator.select('scene-b')
+    await flush() // B 进入 host.mount pending
+    const pC = coordinator.select('scene-c')
+    await pC
+    expect(coordinator.state).toMatchObject({ kind: 'denied', sceneId: 'scene-c' })
+
+    // B.mount 晚到成功 → stale：先 teardown 再丢弃
+    last('scene-b').resolve()
+    await pB
+    await flush()
+
+    expect(coordinator.state).toMatchObject({ kind: 'denied', sceneId: 'scene-c' })
+    expect(handles['scene-b']![0]!.unmount).toHaveBeenCalledTimes(1)
+  })
+
+  it('A active → select C denied：active ownership 不丢，Host 不卸载 A', async () => {
+    const catalog = deniedCatalog()
+    const { host, last } = makeRaceHost()
+    const coordinator = new SceneCoordinator(host, catalog, { permissions: () => [] })
+
+    const pA = coordinator.select('scene-a')
+    await flush()
+    last('scene-a').resolve()
+    await pA
+    expect(coordinator.state).toMatchObject({ kind: 'active', sceneId: 'scene-a' })
+
+    // denied 分支不得产生任何额外 unmount/mount（对比 A 事务自身的调用数）
+    const unmountsBefore = (host.unmount as ReturnType<typeof vi.fn>).mock.calls.length
+    const mountsBefore = (host.mount as ReturnType<typeof vi.fn>).mock.calls.length
+    const pC = coordinator.select('scene-c')
+    await pC
+    expect(coordinator.state).toMatchObject({ kind: 'denied', sceneId: 'scene-c' })
+    // ownership 语义：Coordinator 仍认识 A
+    expect(coordinator.activeSceneId).toBe('scene-a')
+    expect((host.unmount as ReturnType<typeof vi.fn>).mock.calls.length).toBe(unmountsBefore)
+    expect((host.mount as ReturnType<typeof vi.fn>).mock.calls.length).toBe(mountsBefore)
+  })
+
+  it('rollback continuity：A active → C denied → B mount fail → 仍回滚到 A（§19）', async () => {
+    const catalog = deniedCatalog()
+    const { host, handles } = makeRaceHost()
+    const coordinator = new SceneCoordinator(host, catalog, { permissions: () => [] })
+
+    // A active
+    const pA = coordinator.select('scene-a')
+    await flush()
+    handles['scene-a']![0]!.resolve()
+    await pA
+    expect(coordinator.activeSceneId).toBe('scene-a')
+
+    // C denied（过渡态，A 继续运行）
+    await coordinator.select('scene-c')
+    expect(coordinator.state).toMatchObject({ kind: 'denied', sceneId: 'scene-c' })
+
+    // B mount fail → previous 必须仍是 A（从 ownership 取）→ 自动回滚 A
+    const pB = coordinator.select('scene-b')
+    await flush()
+    handles['scene-b']![0]!.reject(new Error('boot failed'))
+    await flush()
+    // 回滚的 host.mount(A) 是 A 的第二个 handle
+    handles['scene-a']![1]!.resolve()
+    await pB
+    await flush()
+
+    expect(coordinator.state).toMatchObject({ kind: 'active', sceneId: 'scene-a' })
+    expect(coordinator.activeSceneId).toBe('scene-a')
+    expect(handles['scene-a']![1]!.unmount).not.toHaveBeenCalled() // 回滚成功不被回收
+  })
+})
