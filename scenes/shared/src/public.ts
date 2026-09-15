@@ -62,6 +62,11 @@ export class SceneViewController {
     return this.boot !== undefined
   }
 
+  /** SceneMount lifetime authority（所有跨 await continuation 的统一 gate）。 */
+  private alive(): boolean {
+    return !this.cb.isAborted()
+  }
+
   async setView(view: SceneView): Promise<void> {
     if (this.desired === view && !this.boot) return
     const generation = ++this.intent
@@ -79,6 +84,12 @@ export class SceneViewController {
         this.boot = undefined
       } catch (error) {
         this.boot = undefined
+        // #18-r3：boot reject 不是重新获得 commit authority 的理由——
+        // SceneMount 已 abort 时，failure continuation 与 success continuation
+        // 一样是 terminal no-op：不 rollback / 不 applyActiveView /
+        // 不 dispatchView / 不把正常 teardown race 报成 3D 初始化故障。
+        // （成功路径的 isAborted 检查保留；见 alive()。）
+        if (this.cb.isAborted()) return
         if (this.desired === 'graphics') {
           // 当前 graphics intent 的失败：回滚到 map + 明确错误通道
           //（可重试——desired 复位后下一次 setView('graphics') 不被阻断）
@@ -94,7 +105,7 @@ export class SceneViewController {
       }
     }
 
-    if (this.cb.isAborted()) return
+    if (!this.alive()) return
 
     // #18-r2：boot 成功而最新 intent 已是 map——显式挂起新 runtime
     if (this.desired === 'map' && this.booted) {

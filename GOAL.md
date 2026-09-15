@@ -598,3 +598,16 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   compliance 竞态测试 +4（SUSPENDED + frame 冻结 / reject 回滚重试 / map-wins /
   boot-resolve 补提交 single-flight）。
   验证：pnpm verify 全绿、282/282 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-16 **Issue #18 三次复审修复（P1：boot reject 分支越过 SceneMount lifetime）**：
+  ①SceneViewController catch 分支增加 terminal guard——boot reject 发生在
+  SceneMount abort 之后（真实路径：late graphics.use() resolve 后 scoped
+  onPick/onFrame/entities.register 因 scope closed 抛 SceneScopeClosedError）
+  时，failure continuation 为 terminal no-op：不 rollback / 不 applyActiveView /
+  不 dispatchView / 不把正常 teardown race 报成 3D 初始化故障；
+  ②统一 commit gate：抽出 alive() helper（所有跨 await continuation 调用
+  callback 前先验证 mount alive），success/catch 不再漂移；
+  ③Scene 仍 active 的 failure/retry 语义（rollback map + 错误通道 + 可重试）
+  完整保留；
+  ④单元测试 +2（abort 后 reject terminal no-op / 对照 active reject 语义）。
+  验证：pnpm verify 全绿、284/284 单测、compliance 44/44、e2e 10/10。
