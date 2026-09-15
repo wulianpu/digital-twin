@@ -395,6 +395,9 @@ export function buildFoundation(
       gateway.dispose()
       mapAccess.dispose()
       graphicsAccess.dispose()
+      // Issue #12-E：会话过期/退出路径真正销毁 asset manager——
+      // 已加载 GLB 的 GPU 资源全部释放，pending load 晚到也被回收
+      assets.dispose()
     }
   }
 }

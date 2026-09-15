@@ -429,3 +429,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   last-mode-wins/切回 LIVE 三段/分区隔离）；history-replay +1（长期订阅
   backward scrub 集成）；gateway-protocol.md 增加 §7.1 revision 排序域说明。
   验证：pnpm verify 全绿、239/239 单测、compliance 40/40、e2e 9/9。
+
+- 2026-09-16 **Issue #12 修复（P1：AssetLeaseManager 生命周期闭环）**：
+  ①CacheEntry 状态机（refCount/load/loaded/disposed）：load reject 原子驱逐
+  （compare-by-entry identity + refCount 回滚），失败不再永久中毒，
+  同 key 重试创建新 load 并可恢复；并发 claimant 全部回滚后 leaseCount 归零；
+  ②manager `disposed` 终态：dispose 幂等；acquire fail-fast 不启动 load；
+  registerSource 明确 reject；pending load 在 dispose 后 late resolve →
+  LoadedAsset exactly-once 回收（WeakSet identity 账本）且不返回逃逸 Lease；
+  ③dispose() 真正释放全部 owned 资源（resolved 立即 / pending resolve 后自动），
+  resolvedBytes/leaseCount/cache 归零；旧 lease 再 release 幂等不 double-dispose；
+  ④disposeObject3D 深度回收：geometry/material/material 属性槽位 Texture
+  全部 exactly-once dispose（统一 WeakSet identity 去重，共享 texture 只一次）；
+  ⑤foundation teardown 接线 assets.dispose（退出/会话过期路径真实生效）；
+  ⑥测试 +5（失败驱逐与重试 / 并发失败 / dispose 语义 / pending 竞态 / GPU 深度回收）。
+  验证：pnpm verify 全绿、244/244 单测、compliance 40/40、e2e 9/9。

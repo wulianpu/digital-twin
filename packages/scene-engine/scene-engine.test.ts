@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { FrameLoop } from './src/frameLoop'
 import { AdaptiveQuality, profileSettings } from './src/adaptive'
 import { TilesSystem, type TilesRendererLike } from './src/tiles'
-import { AssetLeaseManager } from './src/resources'
+import { AssetLeaseManager, disposeObject3D, type AssetSource } from './src/resources'
 import { createSceneViewDriver, siteExtentMeters } from './src/driver'
 import { ContextLossGuard } from './src/contextLoss'
 
@@ -348,5 +348,166 @@ describe('SceneViewDriver', () => {
     expect(extent).toBeGreaterThan(8000)
     expect(extent).toBeLessThan(13000)
     expect(siteExtentMeters(undefined)).toBeUndefined()
+  })
+})
+
+/** ---------------------- Issue #12：AssetLeaseManager 生命周期闭环 */
+
+describe('AssetLeaseManager 生命周期闭环（Issue #12）', () => {
+  function makeSource() {
+    const loads: Array<{ descriptor: { url?: string }; dispose: ReturnType<typeof vi.fn> }> = []
+    return {
+      loads,
+      source: {
+        scheme: 'memory:',
+        load: async (descriptor: { url?: string }) => {
+          const dispose = vi.fn()
+          loads.push({ descriptor, dispose })
+          return {
+            object: { name: descriptor.url },
+            estimatedBytes: 100,
+            dispose
+          }
+        }
+      }
+    }
+  }
+
+  function makeManager(source: AssetSource) {
+    return new AssetLeaseManager({
+      resolve: (ref) =>
+        ref.id === 'crane-glb'
+          ? { ref, kind: 'glb' as const, url: 'memory:crane-glb' }
+          : undefined,
+      sources: [source]
+    })
+  }
+
+  it('load reject 后 cache/refCount 原子驱逐，重试可恢复（不永久中毒）', async () => {
+    let fail = true
+    const source = {
+      scheme: 'memory:',
+      load: async (descriptor: { url?: string }) => {
+        if (fail) throw new Error('transient network failure')
+        return { object: { name: descriptor.url }, estimatedBytes: 100, dispose: vi.fn() }
+      }
+    }
+    const manager = makeManager(source)
+    await expect(manager.acquire({ id: 'crane-glb' })).rejects.toThrowError(/transient/)
+    // 失败后 baseline：无泄漏的 refCount / lease
+    expect(manager.leaseCount).toBe(0)
+
+    // 重试：同一 key 创建新 load 并成功
+    fail = false
+    const lease = await manager.acquire({ id: 'crane-glb' })
+    expect(manager.leaseCount).toBe(1)
+    expect((lease.object as { name: string }).name).toBe('memory:crane-glb')
+    manager.dispose()
+  })
+
+  it('并发 acquire 同一失败 key：全部 reject 后 leaseCount 归零', async () => {
+    const source = {
+      scheme: 'memory:',
+      load: async () => {
+        throw new Error('decode failed')
+      }
+    }
+    const manager = makeManager(source)
+    const results = await Promise.allSettled([
+      manager.acquire({ id: 'crane-glb' }),
+      manager.acquire({ id: 'crane-glb' }),
+      manager.acquire({ id: 'crane-glb' })
+    ])
+    expect(results.every((r) => r.status === 'rejected')).toBe(true)
+    expect(manager.leaseCount).toBe(0)
+    manager.dispose()
+  })
+
+  it('dispose 真正释放已加载资源，acquire/registerSource fail-fast，指标归零', async () => {
+    const { source, loads } = makeSource()
+    const manager = makeManager(source)
+    const lease = await manager.acquire({ id: 'crane-glb' })
+    expect(manager.estimatedBytesTotal).toBe(100)
+
+    manager.dispose()
+    expect(loads[0]!.dispose).toHaveBeenCalledTimes(1) // resolved entry 被 dispose
+    expect(manager.estimatedBytesTotal).toBe(0)
+    expect(manager.leaseCount).toBe(0)
+
+    // terminal 状态：fail-fast
+    await expect(manager.acquire({ id: 'crane-glb' })).rejects.toThrowError(/disposed/)
+    expect(() => manager.registerSource(source)).toThrowError(/disposed/)
+
+    // 旧 lease 再 release：幂等，不 double-dispose
+    expect(() => lease.release()).not.toThrow()
+    expect(loads[0]!.dispose).toHaveBeenCalledTimes(1)
+    manager.dispose() // 幂等
+    expect(loads[0]!.dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('dispose 与 pending load 竞态：late resolve 被 exactly-once 回收，不返回 Lease', async () => {
+    let releaseLoad!: () => void
+    const gate = new Promise<void>((r) => {
+      releaseLoad = r
+    })
+    const lateDispose = vi.fn()
+    const source = {
+      scheme: 'memory:',
+      load: () =>
+        gate.then(() => ({
+          object: { name: 'late' },
+          estimatedBytes: 100,
+          dispose: lateDispose
+        }))
+    }
+    const manager = makeManager(source)
+    const acquirePromise = manager.acquire({ id: 'crane-glb' })
+    manager.dispose() // load pending 期间销毁
+    releaseLoad() // late resolve
+
+    await expect(acquirePromise).rejects.toThrowError(/disposed/)
+    expect(lateDispose).toHaveBeenCalledTimes(1) // zombie 资源被 exactly-once 回收
+    expect(manager.leaseCount).toBe(0)
+  })
+
+  it('disposeObject3D 释放 geometry/material/texture，共享 texture 只 dispose 一次', async () => {
+    // 经真实 manager 路径验证 disposeObject3D（memory source 返回伪 GLB 场景图）
+    const textureA = { isTexture: true, dispose: vi.fn() }
+    const textureB = { isTexture: true, dispose: vi.fn() }
+    const geometry = { dispose: vi.fn() }
+    const material1 = {
+      dispose: vi.fn(),
+      map: textureA,
+      normalMap: textureA, // 共享 texture
+      emissiveMap: textureB
+    }
+    const material2 = {
+      dispose: vi.fn(),
+      map: textureA // 跨 mesh 共享
+    }
+    const scene = {
+      traverse: (cb: (obj: unknown) => void) => {
+        cb({ geometry, material: material1 })
+        cb({ geometry, material: [material2] })
+      }
+    }
+    const source = {
+      scheme: 'memory:',
+      load: async () => ({
+        object: scene,
+        estimatedBytes: 10,
+        // 与 loadGltf 一致：dispose 走 disposeObject3D 深度回收
+        dispose: () => disposeObject3D(scene)
+      })
+    }
+    const manager = makeManager(source)
+    const lease = await manager.acquire({ id: 'crane-glb' })
+    lease.release() // 最后一个 release → 资源 dispose
+
+    expect(geometry.dispose).toHaveBeenCalledTimes(1)
+    expect(material1.dispose).toHaveBeenCalledTimes(1)
+    expect(material2.dispose).toHaveBeenCalledTimes(1)
+    expect(textureA.dispose).toHaveBeenCalledTimes(1) // identity 去重
+    expect(textureB.dispose).toHaveBeenCalledTimes(1)
   })
 })
