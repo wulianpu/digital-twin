@@ -612,6 +612,24 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④单元测试 +2（abort 后 reject terminal no-op / 对照 active reject 语义）。
   验证：pnpm verify 全绿、284/284 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
+  ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
+  逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
+  envelope 的其它 handler、同 batch 后续 envelope 或其它订阅；source forward
+  与 snapshot replay 全部走该边界；
+  ②限频策略：同一 handler 只在 ok→failing 转变时上报一次（WeakMap 状态，
+  成功即复位）——高频重复 throw 不产生无界 error storm，订阅保留（数据可自愈）；
+  ③`WorldClientOptions.onSubscriberError`：sink 携带 contract/key/mode；
+  缺省降级 console.error；foundation/standalone 已接线；
+  ④replaySnapshot 拆分：`source.snapshot()` 的 try 只捕真正的 source failure，
+  delivery loop 独立——consumer throw 不再被误吞为 source failure，
+  snapshot 后续 envelope 继续处理（#11 的 generation/timeline guard 不回退）；
+  ⑤三 source emitter 隔离：WebSocketSource 拆分 parse/protocol 边界与
+  dispatch（malformed frame 仍丢弃、连接保持），replay/scripted 逐订阅隔离；
+  ⑥测试 +6（坏 handler+健康订阅 multi-envelope batch / 限频复位 /
+  sink meta 与降级 / snapshot 竞态 / fake socket 跨帧 / replay 同位置重放）。
+  验证：pnpm verify 全绿、290/290 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
   ①MockAssetApi 增加 lease 计数同步（acquire/release 驱动 counters.assetLeases）；
   ②expectClean 新增 assetLeases 基线检查（#13 复审遗留的 metrics 缺口闭环）；
@@ -621,3 +639,21 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   资源全量归零；
   ④README 目录清单补 scenes/shared（SceneViewController）。
   验证：pnpm verify 全绿、284/284 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
+  ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
+  逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
+  envelope 的其它 handler、同 batch 后续 envelope 或其它订阅；source forward
+  与 snapshot replay 全部走该边界；
+  ②限频策略：同一 handler 只在 ok→failing 转变时上报一次（WeakMap 状态，
+  成功即复位）——高频重复 throw 不产生无界 error storm，订阅保留（数据可自愈）；
+  ③`WorldClientOptions.onSubscriberError`：sink 携带 contract/key/mode；
+  缺省降级 console.error；foundation/standalone 已接线；
+  ④replaySnapshot 拆分：`source.snapshot()` 的 try 只捕真正的 source failure，
+  delivery loop 独立——consumer throw 不再被误吞为 source failure，
+  snapshot 后续 envelope 继续处理（#11 的 generation/timeline guard 不回退）；
+  ⑤三 source emitter 隔离：WebSocketSource 拆分 parse/protocol 边界与
+  dispatch（malformed frame 仍丢弃、连接保持），replay/scripted 逐订阅隔离；
+  ⑥测试 +6（坏 handler+健康订阅 multi-envelope batch / 限频复位 /
+  sink meta 与降级 / snapshot 竞态 / fake socket 跨帧 / replay 同位置重放）。
+  验证：pnpm verify 全绿、290/290 单测、compliance 44/44、e2e 10/10。

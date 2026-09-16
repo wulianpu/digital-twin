@@ -46,10 +46,18 @@ export function createReplaySource(options: ReplaySourceOptions): ReplaySource {
   function emitFrame(index: number): void {
     const frame = sorted[index]
     if (!frame) return
+    // commit 先行：同位置重复 seek 是 no-op（可重入安全）——
+    // 投递隔离（Issue #19）由下方逐订阅 try/catch 保证，
+    // 因此该提交不会造成 partial/stuck state。
     lastEmittedFrameIndex = index
     for (const { query, cb } of subscriptions) {
       for (const e of frame.envelopes) {
-        if (matches(e, query)) cb(e)
+        if (!matches(e, query)) continue
+        try {
+          cb(e)
+        } catch (error) {
+          console.error('[world-client] replay subscriber failed; isolated', error)
+        }
       }
     }
   }

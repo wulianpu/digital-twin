@@ -75,7 +75,16 @@ export async function runStandaloneApp(options: StandaloneOptions): Promise<() =
   spatial.ensureEnuFrame(`frame:${options.site.id}`, spatial.toEllipsoidal(options.site.origin))
   spatial.setActiveFrame(`frame:${options.site.id}`)
 
-  const data = new WorldClient({ sources: options.sources, sweepIntervalMs: 0 })
+  const data = new WorldClient({
+    sources: options.sources,
+    sweepIntervalMs: 0,
+    onSubscriberError: (error, meta) => {
+      console.error(
+        `[standalone] data subscriber failed (${meta.contract}/${meta.key}, mode=${meta.mode})`,
+        error
+      )
+    }
+  })
   options.dataAdapter?.(data)
   if (options.gatewayTick) {
     const tickTimer = setInterval(() => options.gatewayTick!(Date.now()), 250)

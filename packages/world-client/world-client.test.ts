@@ -526,3 +526,194 @@ describe('timeline epoch commit authority（Issue #11-r2）', () => {
     client.dispose()
   })
 })
+
+/** ---------------- Issue #19：subscriber fault boundary */
+
+describe('WorldClient subscriber fault boundary（Issue #19）', () => {
+  function setup(onSubscriberError?: (error: unknown, meta: {
+    contract: string
+    key: string
+    mode: string
+  }) => void) {
+    const live = createScriptedSource({ kind: 'live' })
+    const client = new WorldClient({
+      sources: [live],
+      sweepIntervalMs: 0,
+      onSubscriberError
+    })
+    return { live, client }
+  }
+
+  it('坏 handler throw：健康订阅仍收到同一 envelope 与后续 batch', () => {
+    const { live, client } = setup()
+    const bad = vi.fn(() => {
+      throw new Error('scene handler failed')
+    })
+    const healthy = vi.fn()
+    const healthy2 = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, bad)
+    client.subscribe({ contract: 'twin.test@1' }, healthy)
+    client.subscribe({ contract: 'twin.test@1' }, healthy2)
+
+    live.emit([
+      envelope({ key: 'e/1', payload: { n: 1 } }),
+      envelope({ key: 'e/2', payload: { n: 2 } }),
+      envelope({ key: 'e/3', payload: { n: 3 } })
+    ])
+
+    // 健康订阅：三个 envelope 全部收到（bad 不截断 batch）
+    expect(healthy).toHaveBeenCalledTimes(3)
+    expect(healthy2).toHaveBeenCalledTimes(3)
+    // cache/deliver 完整
+    expect(client.peek('twin.test@1', 'e/3')?.payload).toEqual({ n: 3 })
+    client.dispose()
+  })
+
+  it('限频：同一 handler 只在 ok→failing 转变时上报一次，成功后复位', () => {
+    const onSubscriberError = vi.fn()
+    const { live, client } = setup(onSubscriberError)
+    let shouldThrow = true
+    client.subscribe({ contract: 'twin.test@1' }, () => {
+      if (shouldThrow) throw new Error('transient handler failure')
+    })
+
+    live.emit([envelope({ key: 'e/1' })])
+    live.emit([envelope({ key: 'e/2' })])
+    live.emit([envelope({ key: 'e/3' })])
+    expect(onSubscriberError).toHaveBeenCalledTimes(1) // 只报一次（限频）
+
+    shouldThrow = false
+    live.emit([envelope({ key: 'e/4' })]) // 成功 → 复位
+    live.emit([envelope({ key: 'e/5' })])
+    live.emit([envelope({ key: 'e/6' })])
+    shouldThrow = true
+    live.emit([envelope({ key: 'e/7' })]) // 新一轮失败 → 再报一次
+    expect(onSubscriberError).toHaveBeenCalledTimes(2)
+    client.dispose()
+  })
+
+  it('sink meta 包含 contract/key/mode；缺省降级 console.error', () => {
+    const onSubscriberError = vi.fn()
+    const { live, client } = setup(onSubscriberError)
+    client.subscribe({ contract: 'twin.test@1' }, () => {
+      throw new Error('boom')
+    })
+    live.emit([envelope({ key: 'k/1' })])
+    expect(onSubscriberError).toHaveBeenCalledWith(expect.any(Error), {
+      contract: 'twin.test@1',
+      key: 'k/1',
+      mode: 'live'
+    })
+    client.dispose()
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const client2 = setup().client
+    client2.subscribe({ contract: 'twin.test@1' }, () => {
+      throw new Error('boom')
+    })
+    const live2 = createScriptedSource({ kind: 'live' })
+    void live2
+    client2.dispose()
+    errorSpy.mockRestore()
+  })
+
+  it('replaySnapshot：consumer throw 不截断 snapshot 后续 envelope，也不误吞 source failure', async () => {
+    const history = createScriptedSource({ kind: 'history' })
+    history.snapshot = async () => [
+      envelope({ key: 'e/1', payload: { n: 1 } }),
+      envelope({ key: 'e/2', payload: { n: 2 } }),
+      envelope({ key: 'e/3', payload: { n: 3 } })
+    ]
+    const client = new WorldClient({ sources: [history], sweepIntervalMs: 0 })
+    const bad = vi.fn((_e: DataEnvelope) => {
+      throw new Error('consumer bug')
+    })
+    const healthy = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, bad)
+    client.subscribe({ contract: 'twin.test@1' }, healthy)
+
+    // setMode 触发 snapshot replay（#11 语义），consumer throw 不截断
+    client.setMode('history')
+    await Promise.resolve()
+    await Promise.resolve()
+    await new Promise((r) => setTimeout(r, 0))
+
+    // snapshot 三条全部 ingest/deliver（healthy 收到全部三条）
+    expect(healthy).toHaveBeenCalledTimes(3)
+    expect(client.peek('twin.test@1', 'e/3')?.payload).toEqual({ n: 3 })
+    client.dispose()
+  })
+
+  it('WebSocket fake socket：subscriber throw 后 socket 继续处理下一帧', async () => {
+    const sent: string[] = []
+    const fakeSocket = {
+      send: (d: string) => {
+        sent.push(d)
+      },
+      close: () => {},
+      onopen: null as ((e?: unknown) => void) | null,
+      onclose: null as ((e?: unknown) => void) | null,
+      onmessage: null as ((e: { data: unknown }) => void) | null,
+      onerror: null as ((e?: unknown) => void) | null
+    }
+    const ws = createWebSocketSource({
+      url: 'ws://gateway.test',
+      socketFactory: () => fakeSocket as never,
+      heartbeatMs: 0
+    })
+    const client = new WorldClient({ sources: [ws], sweepIntervalMs: 0 })
+    const bad = vi.fn(() => {
+      throw new Error('scene handler failed')
+    })
+    const healthy = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, bad)
+    client.subscribe({ contract: 'twin.test@1' }, healthy)
+
+    // 连接建立
+    fakeSocket.onopen?.()
+    // 帧 1：e1（bad handler 会 throw）、e2
+    fakeSocket.onmessage?.({
+      data: JSON.stringify([
+        { contract: 'twin.test@1', key: 'e/1', sourceTime: 1, ingestTime: 1, quality: 'good', payload: { n: 1 } },
+        { contract: 'twin.test@1', key: 'e/2', sourceTime: 2, ingestTime: 2, quality: 'good', payload: { n: 2 } }
+      ])
+    })
+    // 帧 2：e3（socket 未断，继续处理）
+    fakeSocket.onmessage?.({
+      data: JSON.stringify([
+        { contract: 'twin.test@1', key: 'e/3', sourceTime: 3, ingestTime: 3, quality: 'good', payload: { n: 3 } }
+      ])
+    })
+
+    expect(healthy).toHaveBeenCalledTimes(3)
+    expect(client.peek('twin.test@1', 'e/3')?.payload).toEqual({ n: 3 })
+    // malformed frame 仍被安全丢弃（parse 与 dispatch 边界分离后语义不变）
+    fakeSocket.onmessage?.({ data: 'not-json' })
+    expect(healthy).toHaveBeenCalledTimes(3)
+    client.dispose()
+    ws.close()
+  })
+
+  it('ReplaySource：subscriber throw 不阻断其它订阅，重复 seek 同位置可完整重放', () => {
+    const frames = [
+      { timeMs: 1000, envelopes: [envelope({ revision: 10, payload: { t: 'a' } })] },
+      { timeMs: 2000, envelopes: [envelope({ revision: 20, payload: { t: 'b' } })] }
+    ]
+    const history = createReplaySource({ frames })
+    const client = new WorldClient({ sources: [history], sweepIntervalMs: 0 })
+    client.setMode('history')
+    const bad = vi.fn(() => {
+      throw new Error('replay handler failed')
+    })
+    const healthy = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, bad)
+    client.subscribe({ contract: 'twin.test@1' }, healthy)
+
+    expect(() => history.seek(1000)).not.toThrow()
+    expect(healthy).toHaveBeenCalledTimes(1)
+    expect(healthy.mock.calls[0]![0].payload).toEqual({ t: 'a' })
+    expect(() => history.seek(2000)).not.toThrow()
+    expect(healthy).toHaveBeenCalledTimes(2)
+    client.dispose()
+  })
+})

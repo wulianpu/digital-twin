@@ -145,7 +145,15 @@ export function buildFoundation(
     sources: [liveSource, historySource, simulationSource],
     defaultStaleAfterMs: 10_000,
     sweepIntervalMs: 30_000,
-    now: () => world.time.now().epochMillis
+    now: () => world.time.now().epochMillis,
+    // Issue #19：Scene data handler 故障对 Composition Root 可观察
+    //（限频：同一 handler 仅 ok→failing 转变时上报一次）
+    onSubscriberError: (error, meta) => {
+      console.error(
+        `[portal] data subscriber failed (${meta.contract}/${meta.key}, mode=${meta.mode})`,
+        error
+      )
+    }
   })
 
   // Issue #11：HISTORY 主动 seek/rewind（含 scrubber 拖动）是排序权威——

@@ -22,6 +22,17 @@ export interface WorldClientOptions {
    * 判定陈旧，不会误报。
    */
   now?: () => number
+  /**
+   * Issue #19：Scene-facing data handler 的 fault sink（Composition Root
+   * 决定去向：console/telemetry/UI 诊断）。缺省降级 console.error。
+   * 限频策略：同一 handler 的失败只在其 ok→failing 转变时上报一次，
+   * 成功一次即复位——高频重复 throw 不会产生无界 error storm。
+   */
+  onSubscriberError?: (error: unknown, meta: {
+    contract: string
+    key: string
+    mode: WorldMode
+  }) => void
 }
 
 export interface DataApi {
@@ -89,6 +100,11 @@ export class WorldClient implements DataApi {
   private sweepTimer: ReturnType<typeof setInterval> | undefined
   private disposed = false
   private readonly now: () => number
+  /** Issue #19：handler → failing 状态（限频：只在 ok→failing 转变时上报）。 */
+  private readonly failingHandlers = new WeakMap<
+    (e: DataEnvelope) => void,
+    true
+  >()
 
   constructor(private readonly options: WorldClientOptions) {
     this.now = options.now ?? (() => Date.now())
@@ -258,9 +274,7 @@ export class WorldClient implements DataApi {
       if (this.disposed || this._mode !== mode) return
       if (this.currentTimelineGen(mode) !== timeline) return
       const effective = this.ingest(e, sub)
-      if (effective) {
-        for (const handler of sub.handlers) handler(effective)
-      }
+      if (effective) this.deliver(sub, effective)
     }
     sub.sourceDisposables.set(mode, source.subscribe(sub.query, forward))
   }
@@ -291,12 +305,45 @@ export class WorldClient implements DataApi {
       }
       for (const e of envelopes) {
         const effective = this.ingest(e, sub)
-        if (effective) {
-          for (const handler of sub.handlers) handler(effective)
-        }
+        if (effective) this.deliver(sub, effective)
       }
     } catch {
       // Snapshot failures are non-fatal; the live stream will catch up.
+    }
+  }
+
+  /**
+   * Issue #19：Scene-facing data handler 的 trust/fault boundary——
+   * 逐 handler 隔离：单个 handler throw 只失败它自己，不截断同一 envelope
+   * 的其它 handler、不截断同 batch 后续 envelope、更不截断其它订阅。
+   * 限频策略：同一 handler 只在 ok→failing 转变时上报一次（成功即复位），
+   * 高频重复 throw 不产生无界 error storm；订阅保留（数据可能自愈）。
+   */
+  private deliver(sub: ActiveSubscription, envelope: DataEnvelope): void {
+    for (const handler of [...sub.handlers]) {
+      try {
+        handler(envelope)
+        if (this.failingHandlers.has(handler)) this.failingHandlers.delete(handler)
+      } catch (error) {
+        if (this.failingHandlers.has(handler)) continue // 已上报，限频
+        this.failingHandlers.set(handler, true)
+        try {
+          if (this.options.onSubscriberError) {
+            this.options.onSubscriberError(error, {
+              contract: envelope.contract,
+              key: envelope.key,
+              mode: this._mode
+            })
+          } else {
+            console.error(
+              `[world-client] data subscriber failed (${envelope.contract}/${envelope.key}, mode=${this._mode}) — quarantined reporting until recovery`,
+              error
+            )
+          }
+        } catch {
+          /* sink 自身异常不得影响 pipeline */
+        }
+      }
     }
   }
 

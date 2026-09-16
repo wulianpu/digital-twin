@@ -63,9 +63,15 @@ export function createScriptedSource(options: ScriptedSourceOptions): ScriptedSo
     },
     emit(envelopes) {
       buffer = envelopes.length > 0 ? [...buffer, ...envelopes].slice(-4096) : buffer
+      // Issue #19：逐订阅隔离——坏 subscriber 不得让后续健康订阅持续饥饿
       for (const { query, cb } of subscriptions) {
         for (const e of envelopes) {
-          if (matches(e, query)) cb(e)
+          if (!matches(e, query)) continue
+          try {
+            cb(e)
+          } catch (error) {
+            console.error('[world-client] scripted subscriber failed; isolated', error)
+          }
         }
       }
     },

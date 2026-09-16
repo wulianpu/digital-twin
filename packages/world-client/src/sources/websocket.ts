@@ -123,26 +123,37 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       startHeartbeat(s)
     }
     s.onmessage = (ev) => {
+      // Issue #19：parse/protocol 边界与 subscriber dispatch 必须分离——
+      // 业务 handler throw 不是 malformed frame，不得静默吞掉整批数据。
+      let parsed: unknown
       try {
-        const parsed = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data
-        if (parsed && parsed.type === 'pong') {
-          lastPongAt = Date.now()
-          return
-        }
-        if (parsed && parsed.type === 'error') {
-          for (const cb of [...errorListeners]) cb(parsed as GatewayErrorFrame)
-          return
-        }
-        const envelopes: DataEnvelope[] = Array.isArray(parsed) ? parsed : [parsed]
-        for (const e of envelopes) {
-          for (const [query, handlers] of subscriptions) {
-            if (e.contract !== query.contract) continue
-            if (query.keys && !query.keys.includes(e.key)) continue
-            for (const cb of handlers) cb(e)
+        parsed = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data
+      } catch {
+        return // Malformed frame: drop, keep the connection.
+      }
+      if (parsed && (parsed as { type?: string }).type === 'pong') {
+        lastPongAt = Date.now()
+        return
+      }
+      if (parsed && (parsed as { type?: string }).type === 'error') {
+        for (const cb of [...errorListeners]) cb(parsed as GatewayErrorFrame)
+        return
+      }
+      const envelopes = Array.isArray(parsed) ? parsed : [parsed]
+      // 逐订阅/逐 handler 隔离：单个 subscriber throw 不击穿 emitter，
+      // 也不阻断同 batch 后续 envelope（DataSource 独立使用时契约仍安全）。
+      for (const e of envelopes as DataEnvelope[]) {
+        for (const [query, handlers] of subscriptions) {
+          if (e.contract !== query.contract) continue
+          if (query.keys && !query.keys.includes(e.key)) continue
+          for (const cb of [...handlers]) {
+            try {
+              cb(e)
+            } catch (error) {
+              console.error('[world-client] ws subscriber failed; isolated', error)
+            }
           }
         }
-      } catch {
-        // Malformed frame: drop, keep the connection.
       }
     }
     s.onclose = () => {
