@@ -95,9 +95,11 @@ headless Chromium → 登录 → 300 轮 global-ships ⇄ stack-yard 切换 → 
   也仅是「2D 场景切换 workload 下 JS heap 无持续增长」，
   **不等价于 M9 的 GPU/asset/tile/frame-callback 资源 plateau 验收**。
 
-### Run #7 — 24h mixed-resource 墙钟长跑（Issue #13 升级版，执行中）
+### Run #7 — 24h mixed-resource 墙钟长跑（⚠️ 作废：宿主机休眠中断，未产出报告）
 
 - 启动：2026-09-16 00:50（colima/栈恢复后重新拉起）
+- 结果：**作废**——宿主机于 2026-09-16 白天休眠，colima/栈停止，
+  长跑进程中断且 `soak-24h.json` 未落盘（约 14h 后发现）
 - 执行器：同 I9-2 版本 + Issue #13 升级：
   - **mixed 场景**：global-ships(3D) → stack-yard(2D) → production(3D+GLTF)
     → stack-yard(2D↔3D toggle) 循环重入——真实 SceneEngine/WebGL/
@@ -109,8 +111,14 @@ headless Chromium → 登录 → 300 轮 global-ships ⇄ stack-yard 切换 → 
     slope ≤ 阈值（计数 >0.02/轮、tilesBytes >2KB/轮判泄漏）才 pass；
     任一 counter 单调增长即 fail
 - 参数：`--url http://localhost:8080 --cycles 1152 --cycleIntervalSec 73 --out soak-24h.json`
-- 结果：待填（预计 2026-09-17 00:50 前后完成）
+- 结果：待填（预计 2026-09-17 23:50 前后完成）
 - CI 短版：`tooling/e2e/tests/stress.spec.ts`（6 轮 mixed，随 e2e workflow 运行）
+
+### Run #8 — 24h mixed-resource 墙钟长跑（Run #7 中断后重启，执行中）
+
+- 启动：2026-09-16 23:15（colima/栈恢复后重新拉起，Run #7 中断于 ~14h）
+- 参数/通过标准：同 Run #7
+- 结果：待填（预计 2026-09-17 23:15 前后完成）
 
 ### 微基线（Node，M 系列；`pnpm bench`）
 
