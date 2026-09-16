@@ -104,7 +104,15 @@ function sameDefinition(a: ReferenceFrame, b: ReferenceFrame): boolean {
   return vecClose(a.originECEF, b.originECEF) && matClose
 }
 
-export function createSpatialApi(): SpatialApi {
+export interface SpatialApiOptions {
+  /**
+   * Issue #20：listener fault boundary 的上报通道（限频同 #19：仅
+   * ok→failing 转变时上报一次）。缺省降级 console.error。
+   */
+  onListenerError?: (error: unknown, meta: { event: string }) => void
+}
+
+export function createSpatialApi(onListenerError?: (error: unknown, meta: { event: string }) => void): SpatialApi {
   // Issue #7：registration identity——disposer 绑定注册身份而非仅绑定 key
   // Issue #9：entry 记录 owner kind——'app'（Composition Root ensure）才允许
   // no-op borrow；'registration'（registerFrame / registerEnuFrame 创建）是
@@ -113,6 +121,24 @@ export function createSpatialApi(): SpatialApi {
   const datum = new VerticalDatumRegistry()
   let activeFrameId: ReferenceFrameId | undefined
   const listeners = new Set<(id: ReferenceFrameId | undefined) => void>()
+  // Issue #20：listener fault boundary——逐隔离 + 限频（ok→failing 转变上报一次）
+  const failing = new WeakMap<(id: ReferenceFrameId | undefined) => void, true>()
+  const notify = (id: ReferenceFrameId | undefined): void => {
+    for (const cb of [...listeners]) {
+      try {
+        cb(id)
+        failing.delete(cb)
+      } catch (error) {
+        if (failing.has(cb)) continue // 已上报，限频
+        failing.set(cb, true)
+        try {
+          onListenerError?.(error, { event: 'spatial.activeFrameChanged' })
+        } catch {
+          /* sink 自身异常不得击穿 dispatch */
+        }
+      }
+    }
+  }
 
   const api: SpatialApi = {
     get activeFrameId() {
@@ -195,7 +221,7 @@ export function createSpatialApi(): SpatialApi {
         throw new Error(`[spatial] cannot activate unknown frame "${id}"`)
       }
       activeFrameId = id
-      for (const cb of listeners) cb(id)
+      notify(id)
     },
     onActiveFrameChanged(cb) {
       listeners.add(cb)
@@ -237,7 +263,7 @@ export function createSpatialApi(): SpatialApi {
     // Issue #7-D：active frame 不允许指向不存在的 registry entry
     if (activeFrameId === id) {
       activeFrameId = undefined
-      for (const cb of listeners) cb(undefined)
+      notify(undefined)
     }
   }
 

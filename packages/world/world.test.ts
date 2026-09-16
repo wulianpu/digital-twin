@@ -26,7 +26,7 @@ describe('WorldApi', () => {
     expect(world.session.scope).toEqual({ kind: 'global' })
 
     const seen: string[] = []
-    world.onSessionChanged((s) => seen.push(s.mode))
+    world.onSessionChanged((_s) => seen.push(world.session.mode))
     world.setMode('history')
     expect(seen).toEqual(['history'])
     expect(world.session.mode).toBe('history')
@@ -161,5 +161,86 @@ describe('Registration ownership（Issue #7）', () => {
     const world = createWorldApi({ sites: [siteA], initialScope: scope })
     scope.siteId = 'hijacked'
     expect(world.session.scope).toEqual({ kind: 'site', siteId: 'site-changxing' })
+  })
+})
+
+/** -------- Issue #20：Foundation listener fault boundary */
+
+describe('listener fault boundary（Issue #20）', () => {
+  it('world：listener A throw → B 仍收到 session 变化，setMode 不向调用方抛错', () => {
+    const world = createWorldApi({
+      onListenerError: (error) => {
+        expect((error as Error).message).toBe('listener A failed')
+      }
+    })
+    const seen: string[] = []
+    world.onSessionChanged(() => {
+      throw new Error('listener A failed')
+    })
+    world.onSessionChanged((_s) => seen.push(world.session.mode))
+
+    expect(() => world.setMode('history')).not.toThrow()
+    expect(seen).toEqual(['history'])
+  })
+
+  it('限频：同一 listener 仅 ok→failing 转变上报一次，成功后复位', () => {
+    const onListenerError = vi.fn()
+    const world = createWorldApi({ onListenerError })
+    let fail = true
+    world.onSessionChanged(() => {
+      if (fail) throw new Error('transient')
+    })
+    world.setMode('history') // 上报 1 次
+    world.setMode('live') // 仍 failing → 限频不上报
+    world.setMode('simulation') // 仍 failing → 限频
+    expect(onListenerError).toHaveBeenCalledTimes(1)
+    fail = false
+    world.setMode('live') // 成功 → 复位
+    fail = true
+    world.setMode('history') // 新一轮 failing → 再上报
+    expect(onListenerError).toHaveBeenCalledTimes(2)
+  })
+
+  it('selection：A throw → B 收到完整 snapshot，setter 不抛错', () => {
+    const onListenerError = vi.fn()
+    const selection = createSelectionApi(onListenerError)
+    const seen: Array<{ primary: string | undefined; count: number }> = []
+    selection.onChange(() => {
+      throw new Error('A failed')
+    })
+    selection.onChange((s) => {
+      seen.push({
+        primary: s.primary?.id ?? undefined,
+        count: s.secondary.length
+      })
+    })
+
+    expect(() =>
+      selection.setPrimary({ namespace: 'vessel', id: 'h1' })
+    ).not.toThrow()
+    selection.setSecondary([{ namespace: 'agv', id: 'a1' }])
+    expect(seen.length).toBe(2)
+    expect(selection.current.primary?.id).toBe('h1')
+    // 同一 listener 持续 failing：限频只上报一次（ok→failing 转变）
+    expect(onListenerError).toHaveBeenCalledTimes(1)
+  })
+
+  it('site registry：register/dispose 的 siteListeners throw 不影响 truth', () => {
+    const world = createWorldApi()
+    const site = {
+      id: 'site-x',
+      name: 'X',
+      origin: {
+        longitudeDegrees: 1,
+        latitudeDegrees: 1,
+        heightMeters: 0,
+        verticalReference: 'ellipsoid' as const
+      },
+      bounds: { south: 0, west: 0, north: 2, east: 2 }
+    }
+    const d = world.sites.register(site)
+    expect(world.sites.get('site-x')?.name).toBe('X')
+    expect(() => d.dispose()).not.toThrow()
+    expect(world.sites.get('site-x')).toBeUndefined()
   })
 })

@@ -630,6 +630,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   sink meta 与降级 / snapshot 竞态 / fake socket 跨帧 / replay 同位置重放）。
   验证：pnpm verify 全绿、290/290 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-16 **Issue #20 修复（P1：World/Selection/Spatial listener fault boundary）**：
+  ①world.ts：`notifyListeners` 统一 dispatch helper（逐 listener try/catch +
+  `[...listeners]` 快照迭代）——emitSession/sitesChanged（register 与 dispose
+  两条路径）全部走隔离边界；`CreateWorldOptions.onListenerError` 上报通道；
+  ②selection.ts：emit 逐 listener 隔离 + `createSelectionApi(onListenerError?)`；
+  ③spatial api.ts：activeFrameChanged 三个 dispatch 点（setActiveFrame /
+  removeFrame active 清理）统一 `notify()` + 限频；`createSpatialApi(onListenerError?)`；
+  ④限频策略（与 #19 一致）：同一 listener 仅 ok→failing 转变上报一次，
+  成功复位——无界 error storm 不可发生；订阅保留；
+  ⑤语义分离（方案 D）：mutation 成功后 observer throw 不再向调用方传播；
+  owner validation error（unknown frame、duplicate registration）仍正常 throw；
+  ⑥Composition Root 可观察：portal/standalone 接线 onListenerError → console；
+  ⑦测试 +4（world session 限频复位 / selection snapshot 完整性 / site registry /
+  spatial throw 隔离与限频）。
+  验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
   ①MockAssetApi 增加 lease 计数同步（acquire/release 驱动 counters.assetLeases）；
   ②expectClean 新增 assetLeases 基线检查（#13 复审遗留的 metrics 缺口闭环）；
@@ -657,3 +673,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑥测试 +6（坏 handler+健康订阅 multi-envelope batch / 限频复位 /
   sink meta 与降级 / snapshot 竞态 / fake socket 跨帧 / replay 同位置重放）。
   验证：pnpm verify 全绿、290/290 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-16 **Issue #20 修复（P1：World/Selection/Spatial listener fault boundary）**：
+  ①world.ts：`notifyListeners` 统一 dispatch helper（逐 listener try/catch +
+  `[...listeners]` 快照迭代）——emitSession/sitesChanged（register 与 dispose
+  两条路径）全部走隔离边界；`CreateWorldOptions.onListenerError` 上报通道；
+  ②selection.ts：emit 逐 listener 隔离 + `createSelectionApi(onListenerError?)`；
+  ③spatial api.ts：activeFrameChanged 三个 dispatch 点（setActiveFrame /
+  removeFrame active 清理）统一 `notify()` + 限频；`createSpatialApi(onListenerError?)`；
+  ④限频策略（与 #19 一致）：同一 listener 仅 ok→failing 转变上报一次，
+  成功复位——无界 error storm 不可发生；订阅保留；
+  ⑤语义分离（方案 D）：mutation 成功后 observer throw 不再向调用方传播；
+  owner validation error（unknown frame、duplicate registration）仍正常 throw；
+  ⑥Composition Root 可观察：portal/standalone 接线 onListenerError → console；
+  ⑦测试 +4（world session 限频复位 / selection snapshot 完整性 / site registry /
+  spatial throw 隔离与限频）。
+  验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。

@@ -97,14 +97,18 @@ export function buildFoundation(
   options: { config?: PortalConfig; onHostError?: (error: unknown, phase: string) => void } = {}
 ): PortalFoundation {
   const config = options.config ?? loadPortalConfig()
-  const world = createWorldApi({
+    const onListenerError = (error: unknown, meta: { event: string }) => {
+    console.error(`[portal] ${meta.event} listener failed`, error)
+  }
+const world = createWorldApi({
+    onListenerError,
     worldId: 'portal-world',
     sites: DEMO_SITES,
     initialMode: 'live',
     initialScope: { kind: 'global' }
   })
 
-  const spatial = createSpatialApi()
+  const spatial = createSpatialApi(onListenerError)
   // Pre-register site frames: geodetic <-> local conversions stay stable (§37).
   for (const site of DEMO_SITES) {
     spatial.ensureEnuFrame(`frame:${site.id}`, spatial.toEllipsoidal(site.origin))

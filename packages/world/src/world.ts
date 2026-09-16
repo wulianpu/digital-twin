@@ -44,6 +44,37 @@ export interface CreateWorldOptions {
   initialMode?: WorldMode
   initialScope?: WorldScope
   selection?: SelectionApi
+  /**
+   * Issue #20：listener fault boundary 的上报通道（Composition Root 决定
+   * 去向）。限频：同一 listener 仅 ok→failing 转变时上报一次；缺省降级
+   * console.error。listener throw 不阻断其它健康 listener，也不把已提交的
+   * mutation 伪装成失败。
+   */
+  onListenerError?: (error: unknown, meta: { event: string }) => void
+}
+
+/** Issue #20：逐 listener 隔离 + 限频上报的统一 dispatch helper。 */
+function notifyListeners<T>(
+  listeners: Iterable<(value: T) => void>,
+  value: T,
+  event: string,
+  onError: ((error: unknown, meta: { event: string }) => void) | undefined,
+  failing: WeakMap<(value: T) => void, true>
+): void {
+  for (const cb of [...listeners]) {
+    try {
+      cb(value)
+      failing.delete(cb)
+    } catch (error) {
+      if (failing.has(cb)) continue // 已上报，限频
+      failing.set(cb, true)
+      try {
+        onError?.(error, { event })
+      } catch {
+        /* sink 自身异常不得击穿 dispatch */
+      }
+    }
+  }
 }
 
 /**
@@ -109,6 +140,10 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
   const siteListeners = new Set<() => void>()
   const sessionListeners = new Set<(s: WorldSession) => void>()
   const tickListeners = new Set<(t: WorldTime) => void>()
+  // Issue #20：listener fault 状态（限频）
+  const failingSite = new WeakMap<() => void, true>()
+  const failingSession = new WeakMap<(s: WorldSession) => void, true>()
+  const onListenerError = options.onListenerError
   const selection = options.selection ?? createSelectionApi()
 
   function buildSession(): WorldSession {
@@ -124,7 +159,7 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
 
   function emitSession(): void {
     const session = buildSession()
-    for (const cb of sessionListeners) cb(session)
+    notifyListeners(sessionListeners, session, 'world.sessionChanged', onListenerError, failingSession)
   }
 
   const siteRegistry: SiteRegistryApi = {
@@ -166,7 +201,7 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
           // 后来 owner 的 registration
           if (sites.get(stored.id)?.token !== token) return
           sites.delete(stored.id)
-          for (const cb of siteListeners) cb()
+          notifyListeners(siteListeners, undefined, 'world.sitesChanged', onListenerError, failingSite)
         }
       }
     }

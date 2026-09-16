@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   createEnuFrame,
   createSpatialApi,
@@ -329,5 +329,52 @@ describe('Frame registration ownership（Issue #9）', () => {
     reg.dispose()
     expect(spatial.activeFrameId).toBeUndefined()
     expect(seen).toEqual([undefined])
+  })
+})
+
+/** -------- Issue #20：Spatial onActiveFrameChanged listener fault boundary */
+
+describe('spatial listener fault boundary（Issue #20）', () => {
+  it('listener A throw → B 仍收到 frame change，setActiveFrame 不抛错', () => {
+    const spatial = createSpatialApi((error) => {
+      expect((error as Error).message).toBe('A failed')
+    })
+    const ORIGIN = {
+      longitudeDegrees: 121.7821,
+      latitudeDegrees: 31.3622,
+      heightMeters: 4.2,
+      verticalReference: 'ellipsoid' as const
+    }
+    const d = spatial.registerEnuFrame('frame:x', ORIGIN)
+    spatial.setActiveFrame('frame:x')
+    const seen: Array<string | undefined> = []
+    spatial.onActiveFrameChanged(() => {
+      throw new Error('A failed')
+    })
+    spatial.onActiveFrameChanged((id) => seen.push(id))
+
+    spatial.setActiveFrame(undefined)
+    expect(seen).toEqual([undefined])
+    expect(spatial.activeFrameId).toBeUndefined()
+    void d
+  })
+
+  it('限频：同一 listener 持续 throw 只上报一次', () => {
+    const onListenerError = vi.fn()
+    const spatial = createSpatialApi(onListenerError)
+    const d = spatial.registerEnuFrame('frame:y', {
+      longitudeDegrees: 0,
+      latitudeDegrees: 0,
+      heightMeters: 0,
+      verticalReference: 'ellipsoid' as const
+    })
+    spatial.onActiveFrameChanged(() => {
+      throw new Error('boom')
+    })
+    spatial.setActiveFrame('frame:y')
+    spatial.setActiveFrame(undefined)
+    spatial.setActiveFrame('frame:y')
+    expect(onListenerError).toHaveBeenCalledTimes(1)
+    d.dispose()
   })
 })

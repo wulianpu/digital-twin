@@ -18,16 +18,40 @@ export interface SelectionApi {
  * made on the 2D map survives switching to 3D — there is exactly one
  * business selection, engines only render it.
  */
-export function createSelectionApi(): SelectionApi {
+export function createSelectionApi(
+  onListenerError?: (error: unknown, meta: { event: string }) => void
+): SelectionApi {
   let primary: EntityRef | undefined
   let secondary: EntityRef[] = []
   const listeners = new Set<(state: SelectionState) => void>()
+  const failing = new WeakMap<(state: SelectionState) => void, true>()
 
 /** Issue #5：snapshot 与内部 state 脱离别名（copy-on-read）。 */
 function snapshotState(): SelectionState {
   return {
     primary: primary ? { ...primary } : undefined,
     secondary: secondary.map((entity) => ({ ...entity }))
+  }
+}
+
+/** Issue #20：逐 listener 隔离 + 限频上报（与 #19 同策略）。 */
+function notifyListeners(
+  listeners: Set<(state: SelectionState) => void>,
+  value: SelectionState
+): void {
+  for (const cb of [...listeners]) {
+    try {
+      cb(value)
+      failing.delete(cb)
+    } catch (error) {
+      if (failing.has(cb)) continue // 已上报，限频
+      failing.set(cb, true)
+      try {
+        onListenerError?.(error, { event: 'selection.changed' })
+      } catch {
+        /* sink 自身异常不得击穿 dispatch */
+      }
+    }
   }
 }
 
@@ -38,8 +62,7 @@ function ownEntity(entity: EntityRef): EntityRef {
 }
 
 function emit(): void {
-  const snapshot = snapshotState()
-  for (const cb of listeners) cb(snapshot)
+  notifyListeners(listeners, snapshotState())
 }
 
 const api: SelectionApi = {

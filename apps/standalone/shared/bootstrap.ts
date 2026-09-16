@@ -67,11 +67,15 @@ export async function runStandaloneApp(options: StandaloneOptions): Promise<() =
   })
   observer.observe(graphicsContainer, { childList: true })
 
-  const world = createWorldApi({
+    const onListenerError = (error: unknown, meta: { event: string }) => {
+    console.error(`[standalone] ${meta.event} listener failed`, error)
+  }
+const world = createWorldApi({
+    onListenerError,
     sites: [options.site],
     initialScope: { kind: 'site', siteId: options.site.id }
   })
-  const spatial = createSpatialApi()
+  const spatial = createSpatialApi(onListenerError)
   spatial.ensureEnuFrame(`frame:${options.site.id}`, spatial.toEllipsoidal(options.site.origin))
   spatial.setActiveFrame(`frame:${options.site.id}`)
 
