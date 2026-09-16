@@ -12,6 +12,7 @@ import {
   type SpatialApi
 } from '@twin/spatial'
 import {
+  SpatialStateBuffer,
   WorldClient,
   createWebSocketSource,
   type DataApi,
@@ -118,6 +119,11 @@ const world = createWorldApi({
 
   const gateway = createDemoGateway()
 
+  // Issue #21：Spatial Fast Path 为 Application-owned 共享运行时状态——
+  // 唯一写入链路 = 当前 WorldClient 接受的 envelope（经下方 data.subscribe
+  // adapter）。DemoGateway 不再拥有绕过 WorldClient 的 side effect。
+  const stateBuffer = new SpatialStateBuffer(256)
+
   // 预置 20 分钟历史（必须在 buildHistorySource 之前落环）
   for (let t = Date.now() - 20 * 60_000; t < Date.now(); t += 1000) {
     gateway.tick('live', t)
@@ -198,7 +204,7 @@ const world = createWorldApi({
     const s = decodeAgv(env)
     if (!s) return
     const q = quatFromHeadingPitchRoll(s.headingDeg * DEG2RAD, 0, 0)
-    gateway.stateBuffer.upsert(env.key, {
+    stateBuffer.upsert(env.key, {
       x: s.xMeters,
       y: 0,
       z: s.yMeters,
@@ -235,7 +241,7 @@ const world = createWorldApi({
   const graphicsAccess = createGraphicsAccess({
     getViewport: () => containers.graphics,
     spatial,
-    stateBuffer: gateway.stateBuffer,
+    stateBuffer,
     quality: config.defaultQuality,
     maxQuality: 'EXHIBITION',
     // Issue #15：Scene callback 故障可观测（quarantine 由引擎负责，

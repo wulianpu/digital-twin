@@ -44,13 +44,14 @@ describe('演示网关（I7 补强）', () => {
     gateway.dispose()
   })
 
-  it('AGV 位姿进入 Spatial Fast Path（§35）', async () => {
+  it('tick 生成 AGV envelope（§35 fast-path 写入由 WorldClient adapter 负责）', async () => {
+    // Issue #21：DemoGateway 只生成 DataEnvelope——SpatialStateBuffer 的
+    // ownership 已上移到 Composition Root，gateway 不再直接写共享渲染 buffer。
     const gateway = createDemoGateway()
     gateway.tick('live', 1_780_000_000_000)
-    expect(gateway.stateBuffer.count).toBe(6) // 6 台演示 AGV
-    const sample = { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, frameId: '', timeMs: 0 }
-    expect(gateway.stateBuffer.readLatest('agv/AGV-01', sample)).toBe(true)
-    expect(sample.frameId).toBe('frame:site-changxing')
+    const agv = await gateway.live.snapshot({ contract: AGV_CONTRACT })
+    expect(agv.length).toBe(6) // 6 台演示 AGV
+    for (const e of agv) expect(e.key).toMatch(/^agv\//)
     gateway.dispose()
   })
 

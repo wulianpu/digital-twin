@@ -1,6 +1,5 @@
 import type { Site } from '@twin/world'
 import {
-  SpatialStateBuffer,
   createReplaySource,
   createScriptedSource
 } from '@twin/world-client'
@@ -23,7 +22,6 @@ import { SITE_CHANGEXING } from './sites'
 export interface DemoGateway {
   readonly live: ScriptedSource
   readonly simulation: ScriptedSource
-  readonly stateBuffer: SpatialStateBuffer
   /** Drive all generators from the world clock (live or virtual time). */
   tick(mode: 'live' | 'simulation', timeMs: number): void
   /** Build a replay source from the recorded history ring. */
@@ -202,7 +200,6 @@ function alarmEnvelopes(timeMs: number, revision: number) {
  * with the WebSocket transport pointed at the real gateway.
  */
 export function createDemoGateway(): DemoGateway {
-  const stateBuffer = new SpatialStateBuffer(256)
   let revision = 0
   const historyRing: Array<{ timeMs: number; envelopes: unknown[] }> = []
   let lastHistoryAt = 0
@@ -218,18 +215,6 @@ export function createDemoGateway(): DemoGateway {
     }
     for (const a of agvEnvelopes(timeMs)) {
       envelopes.push(envelopeOf(AGV_CONTRACT, a.key, timeMs, a.payload, revision))
-      // Spatial fast path: poses bypass any reactive system (§35).
-      stateBuffer.upsert(a.key, {
-        x: a.payload.xMeters,
-        y: 0,
-        z: a.payload.yMeters,
-        qx: 0,
-        qy: Math.sin((a.payload.headingDeg * Math.PI) / 360),
-        qz: 0,
-        qw: Math.cos((a.payload.headingDeg * Math.PI) / 360),
-        timeMs,
-        frameId: `frame:${SITE_CHANGEXING.id}`
-      })
     }
     for (const s of stackEnvelopes(timeMs, revision)) {
       envelopes.push(envelopeOf(STACK_CONTRACT, s.key, timeMs, s.payload, s.revision))
@@ -249,7 +234,6 @@ export function createDemoGateway(): DemoGateway {
   return {
     live,
     simulation,
-    stateBuffer,
     tick(mode, timeMs) {
       const envelopes = generateAll(timeMs)
       const target = mode === 'simulation' ? simulation : live

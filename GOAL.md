@@ -612,6 +612,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④单元测试 +2（abort 后 reject terminal no-op / 对照 active reject 语义）。
   验证：pnpm verify 全绿、284/284 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-16 **Issue #21 修复（P1：DEMO tick 覆写 Spatial Fast Path）**：
+  ①采纳方案 B——`SpatialStateBuffer` 所有权从 DemoGateway 上移到 Composition
+  Root（foundation 持有并传入 graphicsAccess）；DemoGateway 不再持有/写 buffer；
+  ②generateAll 移除 `stateBuffer.upsert` 副作用——DEMO 生成器只负责产出
+  DataEnvelope（HISTORY/SIM fixture 照常工作），Fast Path 唯一写入链路 =
+  WorldClient 已接受 envelope（foundation 的 data.subscribe adapter）；
+  ③gateway.test.ts 改为验证 envelope 生成行为（不再把"直接写共享渲染 buffer"
+  当作不可替换契约）；新增生产替换集成回归 gateway-integration.test.ts
+  （fake WebSocket + 配置 gatewayWsUrl：真实 envelope（sourceTime 落后墙钟）
+  进入 buffer 后，多次 foundationTick 不再覆写；subscribe 帧证明 live source
+  已替换）。
+  验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
   逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
@@ -655,6 +668,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   资源全量归零；
   ④README 目录清单补 scenes/shared（SceneViewController）。
   验证：pnpm verify 全绿、284/284 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-16 **Issue #21 修复（P1：DEMO tick 覆写 Spatial Fast Path）**：
+  ①采纳方案 B——`SpatialStateBuffer` 所有权从 DemoGateway 上移到 Composition
+  Root（foundation 持有并传入 graphicsAccess）；DemoGateway 不再持有/写 buffer；
+  ②generateAll 移除 `stateBuffer.upsert` 副作用——DEMO 生成器只负责产出
+  DataEnvelope（HISTORY/SIM fixture 照常工作），Fast Path 唯一写入链路 =
+  WorldClient 已接受 envelope（foundation 的 data.subscribe adapter）；
+  ③gateway.test.ts 改为验证 envelope 生成行为（不再把"直接写共享渲染 buffer"
+  当作不可替换契约）；新增生产替换集成回归 gateway-integration.test.ts
+  （fake WebSocket + 配置 gatewayWsUrl：真实 envelope（sourceTime 落后墙钟）
+  进入 buffer 后，多次 foundationTick 不再覆写；subscribe 帧证明 live source
+  已替换）。
+  验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
