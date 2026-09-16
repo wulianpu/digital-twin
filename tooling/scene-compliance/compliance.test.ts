@@ -33,7 +33,8 @@ function expectClean(report: ComplianceReport): void {
       ['pickCallbacks', leftover.pickCallbacks],
       ['dataSubscriptions', leftover.dataSubscriptions],
       ['uiLayers', leftover.uiLayers],
-      ['spatialFrames', leftover.spatialFrames]
+      ['spatialFrames', leftover.spatialFrames],
+      ['assetLeases', leftover.assetLeases]
     ]
     for (const [name, value] of checks) {
       if (value !== 0) nonzero.push(`cycle ${i}: ${name} = ${value}`)
@@ -121,8 +122,10 @@ describe('Hostile scene compliance（Issue #1 问题5）', () => {
     '%s: Host 兜底回收全部资源',
     async (sceneId, load) => {
       const report = await runComplianceCycles(sceneId, load, { cycles: 2, framesPerCycle: 5 })
-      // Host 兜底：即使 scene 忘记清理，Host 也能回收全部
+      // Host 兜底：即使 scene 忘记清理，Host 也能回收全部——
+      // 统一严格资源 baseline 断言（Issue #3/#13 复审项）
       expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
+      expectClean(report)
     },
     15_000
   )
@@ -131,8 +134,9 @@ describe('Hostile scene compliance（Issue #1 问题5）', () => {
     const report = await runComplianceCycles('hostile:unmount-hangs', async () => {
       return import('./fixtures/hostile-scenes').then(m => m.unmountHangs)
     }, { cycles: 2, framesPerCycle: 5, unmountDeadlineMs: 500 })
-    // 超时后 Host 仍然完成 teardown
+    // 超时后 Host 仍然完成 teardown——同样走严格 baseline
     expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
+    expectClean(report)
   }, 15_000)
 })
 
@@ -264,6 +268,7 @@ describe('Hostile scene compliance: write-side input alias（Issue #6）', () =>
       const report = await runComplianceCycles(sceneId, load, { cycles: 2, framesPerCycle: 5 })
       expect(report.errors).toEqual([])
       expect(report.leftovers.every(l => l.contextState === 'revoked')).toBe(true)
+      expectClean(report)
       expect(zombieWriteProbes[key]).toBe('SAFE')
     },
     15_000
@@ -316,6 +321,7 @@ describe('Hostile scene compliance: registration ownership（Issue #7）', () =>
       for (const [key, expected] of checks) {
         expect(zombieWriteProbes[key]).toBe(expected)
       }
+      expectClean(report)
     },
     15_000
   )

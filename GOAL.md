@@ -611,3 +611,13 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   完整保留；
   ④单元测试 +2（abort 后 reject terminal no-op / 对照 active reject 语义）。
   验证：pnpm verify 全绿、284/284 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
+  ①MockAssetApi 增加 lease 计数同步（acquire/release 驱动 counters.assetLeases）；
+  ②expectClean 新增 assetLeases 基线检查（#13 复审遗留的 metrics 缺口闭环）；
+  ③全部 hostile describe（Issue #1/#4/#5/#7/#18 系列 fixture + unmount-hangs）
+  统一升级为严格 expectClean 资源 baseline 断言——不再只检查 contextState
+  revoked；44/44 全部通过证明所有 teardown 路径（含 throw/timeout/gate 竞态）
+  资源全量归零；
+  ④README 目录清单补 scenes/shared（SceneViewController）。
+  验证：pnpm verify 全绿、284/284 单测、compliance 44/44、e2e 10/10。

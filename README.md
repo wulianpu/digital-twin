@@ -22,6 +22,7 @@ packages/    Foundation：world / spatial / content / world-client /
 domains/     跨 Scene 业务复用：vessel / crane / agv / logistics / production
 scenes/      业务场景：global-ships / stack-yard / vehicle-navigation /
              production / heavy-transport（三大 Architecture Spike）
+             + shared（SceneViewController：2D↔3D view intent 控制器）
 apps/        portal（SceneCoordinator + Workspace）+ standalone ×3
 tooling/     architecture-tests / scene-compliance / benchmarks /
              asset-pipeline / visual-regression

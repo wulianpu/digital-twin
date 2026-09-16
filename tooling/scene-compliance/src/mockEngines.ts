@@ -30,6 +30,7 @@ export interface MockCounters {
   graphicsUseCalls: number
   graphicsSuspends: number
   graphicsResumes: number
+  assetLeases: number
   waterStateSets: number
   suspends: number
   resumes: number
@@ -46,6 +47,7 @@ export function freshCounters(): MockCounters {
     graphicsUseCalls: 0,
     graphicsSuspends: 0,
     graphicsResumes: 0,
+    assetLeases: 0,
     waterStateSets: 0,
     suspends: 0,
     resumes: 0
@@ -368,6 +370,13 @@ export class MockAssetApi implements AssetApi {
     return this.leases.size
   }
 
+  /** Issue #13 遗留闭环：lease 计数进入 compliance baseline 断言。 */
+  private syncCount(): void {
+    this.counters.assetLeases = this.leases.size
+  }
+
+  constructor(private readonly counters: MockCounters) {}
+
   async acquire(ref: { id: string; version?: string }): Promise<{ ref: { id: string; version?: string }; version: string; object: unknown; estimatedBytes: number; release(): void }> {
     const key = `${ref.id}@${ref.version ?? '0'}`
     const lease = {
@@ -377,9 +386,11 @@ export class MockAssetApi implements AssetApi {
       estimatedBytes: 128,
       release: () => {
         this.leases.delete(key)
+        this.syncCount()
       }
     }
     this.leases.set(key, lease)
+    this.syncCount()
     return lease
   }
 }

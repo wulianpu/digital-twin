@@ -117,7 +117,7 @@ export async function runComplianceCycles(
         data,
         selection: world.selection,
         view: createViewService({ getPrimary: () => 'map' }),
-        assets: new MockAssetApi(),
+        assets: new MockAssetApi(counters),
         map: mapAccess,
         graphics: graphicsAccess
       },
@@ -236,7 +236,7 @@ export async function runToggleStress(
       data,
       selection: world.selection,
       view: createViewService({ getPrimary: () => 'map' }),
-      assets: new MockAssetApi(),
+      assets: new MockAssetApi(counters),
       map: mapAccess,
       graphics: graphicsAccess
     },
