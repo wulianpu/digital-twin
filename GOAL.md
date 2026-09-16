@@ -625,6 +625,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   已替换）。
   验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
+  ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
+  （GLB-backed 契约）→ GLTF loader；tileset → 明确 fail-fast 指向
+  TilesSystem（TilesPolicy.tilesetUrls / typed bridge），绝不进入 GLTFLoader；
+  ktx2-texture/binary-metadata/kinematic-model → `UnsupportedAssetKindError`
+  （reserved，V1 无 runtime loader，错误含 asset id + kind）；default 分支
+  exhaustive never 检查（新增 kind 未注册 loader 时编译期即暴露）；
+  ②scheme 只决定 transport/source（memory: 测试 source 仍自带 parser）；
+  ③测试 +4：dispatch matrix（GLTF 分支非 Unsupported / tileset+ktx2+binary+
+  kinematic fail-fast / reserved 语义）；
+  ④docs/asset-pipeline.md：acquire 入口收窄为 glb/gltf/collision-proxy，
+  tileset/ktx2/binary/kinematic 标注 reserved 或专用 owner。
+  验证：pnpm verify 全绿、299/299 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
   逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
@@ -658,6 +672,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑦测试 +4（world session 限频复位 / selection snapshot 完整性 / site registry /
   spatial throw 隔离与限频）。
   验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
+  ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
+  （GLB-backed 契约）→ GLTF loader；tileset → 明确 fail-fast 指向
+  TilesSystem（TilesPolicy.tilesetUrls / typed bridge），绝不进入 GLTFLoader；
+  ktx2-texture/binary-metadata/kinematic-model → `UnsupportedAssetKindError`
+  （reserved，V1 无 runtime loader，错误含 asset id + kind）；default 分支
+  exhaustive never 检查（新增 kind 未注册 loader 时编译期即暴露）；
+  ②scheme 只决定 transport/source（memory: 测试 source 仍自带 parser）；
+  ③测试 +4：dispatch matrix（GLTF 分支非 Unsupported / tileset+ktx2+binary+
+  kinematic fail-fast / reserved 语义）；
+  ④docs/asset-pipeline.md：acquire 入口收窄为 glb/gltf/collision-proxy，
+  tileset/ktx2/binary/kinematic 标注 reserved 或专用 owner。
+  验证：pnpm verify 全绿、299/299 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
   ①MockAssetApi 增加 lease 计数同步（acquire/release 驱动 counters.assetLeases）；
@@ -682,6 +710,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   已替换）。
   验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
+  ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
+  （GLB-backed 契约）→ GLTF loader；tileset → 明确 fail-fast 指向
+  TilesSystem（TilesPolicy.tilesetUrls / typed bridge），绝不进入 GLTFLoader；
+  ktx2-texture/binary-metadata/kinematic-model → `UnsupportedAssetKindError`
+  （reserved，V1 无 runtime loader，错误含 asset id + kind）；default 分支
+  exhaustive never 检查（新增 kind 未注册 loader 时编译期即暴露）；
+  ②scheme 只决定 transport/source（memory: 测试 source 仍自带 parser）；
+  ③测试 +4：dispatch matrix（GLTF 分支非 Unsupported / tileset+ktx2+binary+
+  kinematic fail-fast / reserved 语义）；
+  ④docs/asset-pipeline.md：acquire 入口收窄为 glb/gltf/collision-proxy，
+  tileset/ktx2/binary/kinematic 标注 reserved 或专用 owner。
+  验证：pnpm verify 全绿、299/299 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
   逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
@@ -715,3 +757,17 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑦测试 +4（world session 限频复位 / selection snapshot 完整性 / site registry /
   spatial throw 隔离与限频）。
   验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
+  ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
+  （GLB-backed 契约）→ GLTF loader；tileset → 明确 fail-fast 指向
+  TilesSystem（TilesPolicy.tilesetUrls / typed bridge），绝不进入 GLTFLoader；
+  ktx2-texture/binary-metadata/kinematic-model → `UnsupportedAssetKindError`
+  （reserved，V1 无 runtime loader，错误含 asset id + kind）；default 分支
+  exhaustive never 检查（新增 kind 未注册 loader 时编译期即暴露）；
+  ②scheme 只决定 transport/source（memory: 测试 source 仍自带 parser）；
+  ③测试 +4：dispatch matrix（GLTF 分支非 Unsupported / tileset+ktx2+binary+
+  kinematic fail-fast / reserved 语义）；
+  ④docs/asset-pipeline.md：acquire 入口收窄为 glb/gltf/collision-proxy，
+  tileset/ktx2/binary/kinematic 标注 reserved 或专用 owner。
+  验证：pnpm verify 全绿、299/299 单测、compliance 44/44、e2e 10/10。

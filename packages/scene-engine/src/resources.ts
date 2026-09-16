@@ -61,6 +61,23 @@ interface GLTFLoaderLike {
   loadAsync(url: string): Promise<{ scene: unknown }>
 }
 
+/**
+ * Issue #22：AssetKind 运行时路由缺失的 fail-fast——
+ * kind 决定 parser/runtime owner，scheme 只决定 transport/source。
+ */
+export class UnsupportedAssetKindError extends Error {
+  readonly id: string
+  readonly kind: string
+  constructor(id: string, version: string | undefined, kind: string, reason: string) {
+    super(
+      `[scene-engine] asset "${id}@${version ?? '0'}" kind "${kind}" has no runtime loader: ${reason}`
+    )
+    this.name = 'UnsupportedAssetKindError'
+    this.id = id
+    this.kind = kind
+  }
+}
+
 export class AssetLeaseManager implements AssetApi {
   private readonly cache = new Map<string, CacheEntry>()
   private readonly sources = new Map<string, AssetSource>()
@@ -160,10 +177,48 @@ export class AssetLeaseManager implements AssetApi {
     if (!url) throw new Error(`[scene-engine] asset "${assetRefKey(ref)}" has no url`)
     const scheme = url.slice(0, url.indexOf(':') + 1) || 'https:'
     const source = this.sources.get(scheme)
+    // 注册 scheme source（memory: 等）：transport+parser 由 source 自带
+    //（测试/演示 escape hatch）。
     if (source) return source.load(descriptor)
-    // data: URL 支持（内嵌资产 / 测试）；与 http(s) 一样走 GLTFLoader。
+    // Issue #22：scheme 决定 transport，kind 决定 parser/runtime owner——
+    // 禁止以 URL scheme 代替资产语义（https: ≠ glTF）。
     if (scheme === 'https:' || scheme === 'http:' || scheme === 'data:') {
-      return this.loadGltf(url, descriptor)
+      switch (descriptor.kind) {
+        case 'glb':
+        case 'gltf':
+        // collision-proxy 契约：编码为 GLB（demo manifest 即 .glb）
+        // eslint-disable-next-line no-fallthrough -- 共享 GLTF 分支
+        case 'collision-proxy':
+          return this.loadGltf(url, descriptor)
+        case 'tileset':
+          // 3D Tiles 的 runtime owner 是 SceneEngine TilesSystem
+          //（TilesPolicy.tilesetUrls / typed bridge），不是通用 Object3D lease
+          throw new UnsupportedAssetKindError(
+            ref.id,
+            ref.version,
+            'tileset',
+            '3D Tiles 由 SceneEngine TilesSystem 拥有（TilesPolicy.tilesetUrls），不经 ctx.assets.acquire 加载'
+          )
+        case 'ktx2-texture':
+        case 'binary-metadata':
+        case 'kinematic-model':
+          // 尚无 runtime loader：fail-fast（避免低层 GLTF parse 误报）
+          throw new UnsupportedAssetKindError(
+            ref.id,
+            ref.version,
+            descriptor.kind,
+            'reserved kind（V1 无 runtime loader）'
+          )
+        default: {
+          const exhaustive: never = descriptor.kind
+          throw new UnsupportedAssetKindError(
+            ref.id,
+            ref.version,
+            String(exhaustive),
+            'unknown kind（新增 AssetKind 必须注册 runtime loader）'
+          )
+        }
+      }
     }
     throw new Error(`[scene-engine] no asset source for scheme "${scheme}"`)
   }

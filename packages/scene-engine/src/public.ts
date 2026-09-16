@@ -160,6 +160,7 @@ export function getSceneEngineRuntime(access: GraphicsAccess): EngineRuntime | u
 export function createAssetApi(options: AssetApiOptions): AssetLeaseManager {
   return new AssetLeaseManager(options)
 }
+export { UnsupportedAssetKindError } from './resources'
 
 /**
  * App-level binding that turns a live EngineRuntime into the geodetic-level

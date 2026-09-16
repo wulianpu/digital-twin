@@ -840,3 +840,62 @@ describe('ECEF → scene 轴映射 anchor（Issue #17-D 单一权威实现）', 
   })
 })
 
+
+/** ---------------- Issue #22：AssetKind 运行时路由 dispatch matrix */
+
+import { UnsupportedAssetKindError } from './src/resources'
+
+describe('AssetKind dispatch matrix（Issue #22）', () => {
+  function makeManagerForKinds(kinds: Array<{ id: string; kind: string; url: string }>) {
+    return new AssetLeaseManager({
+      resolve: (ref) => {
+        const entry = kinds.find((k) => k.id === ref.id)
+        return entry
+          ? { ref, kind: entry.kind as never, url: entry.url, bytes: 100 }
+          : undefined
+      },
+      sources: [] // 无 memory source：强制走 kind 路由（https data 路径）
+    })
+  }
+
+  it('glb/gltf/collision-proxy → GLTF 分支（不抛 UnsupportedAssetKindError）', async () => {
+    const manager = makeManagerForKinds([
+      { id: 'a-glb', kind: 'glb', url: 'data:x' },
+      { id: 'a-gltf', kind: 'gltf', url: 'data:x' },
+      { id: 'a-collision', kind: 'collision-proxy', url: 'data:x' }
+    ])
+    // data: blob 不是合法 glTF → GLTFLoader 会失败（fetch/parse 层），
+    // 但错误绝不是 UnsupportedAssetKindError（证明路由进入了 GLTF 分支）
+    for (const id of ['a-glb', 'a-gltf', 'a-collision']) {
+      const error = await manager.acquire({ id }).catch((e) => e)
+      expect(error).toBeInstanceOf(Error)
+      expect(error).not.toBeInstanceOf(UnsupportedAssetKindError)
+      expect(String(error.message)).not.toMatch(/no runtime loader|TilesSystem/)
+      expect(error instanceof UnsupportedAssetKindError).toBe(false)
+    }
+    manager.dispose()
+  })
+
+  it('tileset → 明确 fail-fast 指向 TilesSystem，绝不进入 GLTFLoader', async () => {
+    const manager = makeManagerForKinds([
+      { id: 'changxing-site-tileset', kind: 'tileset', url: 'https://tiles.example/tileset.json' }
+    ])
+    // https: + tileset：URL scheme 不再决定 parser
+    await expect(manager.acquire({ id: 'changxing-site-tileset', version: '2026-08' })).rejects.toThrowError(
+      /TilesSystem/
+    )
+    manager.dispose()
+  })
+
+  it('ktx2-texture / binary-metadata / kinematic-model → reserved fail-fast（含 id+kind）', async () => {
+    const manager = makeManagerForKinds([
+      { id: 'k1', kind: 'ktx2-texture', url: 'https://t/k.ktx2' },
+      { id: 'b1', kind: 'binary-metadata', url: 'https://t/b.bin' },
+      { id: 'm1', kind: 'kinematic-model', url: 'https://t/m.json' }
+    ])
+    await expect(manager.acquire({ id: 'k1' })).rejects.toThrowError(/ktx2-texture.*no runtime loader|no runtime loader.*ktx2-texture/)
+    await expect(manager.acquire({ id: 'b1' })).rejects.toThrowError(/binary-metadata/)
+    await expect(manager.acquire({ id: 'm1' })).rejects.toThrowError(/kinematic-model/)
+    manager.dispose()
+  })
+})

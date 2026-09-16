@@ -12,7 +12,11 @@ Source Asset (IFC/RVT/DCC/点云)
 Canonical Asset（GLB / 3D Tiles / KTX2）
    ↓  manifest（清单 = 平台与管线之间的契约）
 ContentRegistry.registerAssetManifest()
-   ↓  ctx.assets.acquire(ref)   ← Scene 唯一入口
+   ↓  ctx.assets.acquire(ref)   ← Scene 唯一入口（glb/gltf/collision-proxy）
+      （tileset 不走此入口：由 SceneEngine TilesSystem 拥有，
+        经 TilesPolicy.tilesetUrls / descriptor bridge 加载；
+        ktx2-texture / binary-metadata / kinematic-model 在 V1 为
+        reserved——acquire 会 fail-fast 抛 UnsupportedAssetKindError）
 AssetLease（引用计数；归零时平台释放 GPU 资源）
    ↓  graphics.root.add(lease.object)
 Scene unmount → lease.release()（只归还使用权，绝不 dispose 平台资源，§44）
