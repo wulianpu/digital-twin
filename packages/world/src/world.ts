@@ -144,7 +144,9 @@ export function createWorldApi(options: CreateWorldOptions = {}): WorldApi {
   const failingSite = new WeakMap<() => void, true>()
   const failingSession = new WeakMap<(s: WorldSession) => void, true>()
   const onListenerError = options.onListenerError
-  const selection = options.selection ?? createSelectionApi()
+  // Issue #20-r2：默认 selection 必须继承同一个 listener fault sink——
+  // 否则真实 Composition Root 路径（world.selection）的故障不可观察。
+  const selection = options.selection ?? createSelectionApi(onListenerError)
 
   function buildSession(): WorldSession {
     return {

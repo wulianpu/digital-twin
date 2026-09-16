@@ -244,3 +244,19 @@ describe('listener fault boundary（Issue #20）', () => {
     expect(world.sites.get('site-x')).toBeUndefined()
   })
 })
+
+
+describe('默认 world.selection fault sink（#20-r2）', () => {
+  it('createWorldApi({ onListenerError }) 的默认 selection 继承 sink', () => {
+    const onListenerError = vi.fn()
+    const world = createWorldApi({ onListenerError })
+    world.selection.onChange(() => {
+      throw new Error('selection observer failed')
+    })
+    world.selection.setPrimary({ namespace: 'vessel', id: 'h1' })
+    expect(onListenerError).toHaveBeenCalledTimes(1)
+    expect(onListenerError).toHaveBeenCalledWith(expect.any(Error), {
+      event: 'selection.changed'
+    })
+  })
+})

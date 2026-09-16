@@ -625,6 +625,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   已替换）。
   验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-16 **Issue #20 二次复审修复（P1：默认 world.selection 路径丢失 fault sink）**：
+  `world.ts` 的默认 selection 创建补传 onListenerError——
+  `options.selection ?? createSelectionApi(onListenerError)`。真实 Composition
+  Root 路径（createWorldApi({ onListenerError }) → world.selection.onChange）
+  的 selection.changed 故障现在可观察，不再静默吞掉；
+  测试 +1（默认 selection 继承 sink）。
+  验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
   ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
   （GLB-backed 契约）→ GLTF loader；tileset → 明确 fail-fast 指向
@@ -672,6 +680,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑦测试 +4（world session 限频复位 / selection snapshot 完整性 / site registry /
   spatial throw 隔离与限频）。
   验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-16 **Issue #20 二次复审修复（P1：默认 world.selection 路径丢失 fault sink）**：
+  `world.ts` 的默认 selection 创建补传 onListenerError——
+  `options.selection ?? createSelectionApi(onListenerError)`。真实 Composition
+  Root 路径（createWorldApi({ onListenerError }) → world.selection.onChange）
+  的 selection.changed 故障现在可观察，不再静默吞掉；
+  测试 +1（默认 selection 继承 sink）。
+  验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
   ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
@@ -710,6 +726,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   已替换）。
   验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-16 **Issue #20 二次复审修复（P1：默认 world.selection 路径丢失 fault sink）**：
+  `world.ts` 的默认 selection 创建补传 onListenerError——
+  `options.selection ?? createSelectionApi(onListenerError)`。真实 Composition
+  Root 路径（createWorldApi({ onListenerError }) → world.selection.onChange）
+  的 selection.changed 故障现在可观察，不再静默吞掉；
+  测试 +1（默认 selection 继承 sink）。
+  验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
   ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
   （GLB-backed 契约）→ GLTF loader；tileset → 明确 fail-fast 指向
@@ -757,6 +781,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑦测试 +4（world session 限频复位 / selection snapshot 完整性 / site registry /
   spatial throw 隔离与限频）。
   验证：pnpm verify 全绿、296/296 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-16 **Issue #20 二次复审修复（P1：默认 world.selection 路径丢失 fault sink）**：
+  `world.ts` 的默认 selection 创建补传 onListenerError——
+  `options.selection ?? createSelectionApi(onListenerError)`。真实 Composition
+  Root 路径（createWorldApi({ onListenerError }) → world.selection.onChange）
+  的 selection.changed 故障现在可观察，不再静默吞掉；
+  测试 +1（默认 selection 继承 sink）。
+  验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
   ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
