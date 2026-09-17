@@ -114,6 +114,12 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     void tiles
       .addTileset(url)
       .then((handle) => {
+        // Issue #25-D：runtime terminal authority——dispose 已清理层级后，
+        // 迟到的 tileset 不得重新挂回；立即 remove 兜底回收。
+        if (suspended) {
+          handle.remove()
+          return
+        }
         baseWorldRoot.add(handle.group)
       })
       .catch((error) => {
@@ -326,6 +332,7 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     suspend: () => context.suspend(),
     resume: () => context.resume(),
     dispose: () => {
+      suspended = true // Issue #25-D：先进入终态，层级清理随后
       frameLoop.dispose()
       resizeObserver.disconnect()
       contextLossGuard.dispose()
@@ -341,7 +348,6 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
       scene.clear()
       renderer.dispose()
       renderer.domElement.remove()
-      suspended = true
     }
   }
 }

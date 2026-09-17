@@ -711,6 +711,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
   beforeunload 与显式 disposer 共享 single-flight，exactly-once；
@@ -718,6 +730,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
   移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
   后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
@@ -765,6 +789,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
   beforeunload 与显式 disposer 共享 single-flight，exactly-once；
@@ -772,6 +808,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
   移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
   后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
@@ -894,6 +942,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
   beforeunload 与显式 disposer 共享 single-flight，exactly-once；
@@ -901,6 +961,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
   移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
   后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
@@ -948,6 +1020,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
   beforeunload 与显式 disposer 共享 single-flight，exactly-once；
@@ -955,6 +1039,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
   移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
   后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
@@ -1066,6 +1162,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
   beforeunload 与显式 disposer 共享 single-flight，exactly-once；
@@ -1073,6 +1181,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
   移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
   后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
@@ -1120,6 +1240,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
   beforeunload 与显式 disposer 共享 single-flight，exactly-once；
@@ -1127,6 +1259,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
   移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
   后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
@@ -1249,6 +1393,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
   beforeunload 与显式 disposer 共享 single-flight，exactly-once；
@@ -1256,6 +1412,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
   移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
   后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
@@ -1303,6 +1471,18 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
   beforeunload 与显式 disposer 共享 single-flight，exactly-once；
@@ -1310,4 +1490,16 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
   移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
   后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
+  ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
+  addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
+  （dispose during load 竞态有守卫）；
+  ②pending identity：同 URL（含 in-flight）重复 add 一律 fail-fast，
+  并发创建不再互相覆盖泄漏 renderer；
+  ③remove() 按 token compare-and-delete（stale handle 不误删后来 owner
+  的 entry），幂等；
+  ④runtime fire-and-forget continuation 遵守 terminal authority：
+  dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。

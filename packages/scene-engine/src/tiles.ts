@@ -56,23 +56,68 @@ const EMPTY_DIAGNOSTICS: TilesDiagnostics = {
  * scenes from `new TilesRenderer(...)`). Owns the GlobalTileCache policy
  * (§49): explicit byte/item budget shared by every tileset of this engine.
  */
+interface TilesetEntry {
+  renderer: TilesRendererLike
+  group: THREE.Group
+  /** Issue #25：registration identity——remove() 按 token compare-and-delete。 */
+  token: object
+}
+
+/**
+ * TilesSystem (§48): the ONLY place a TilesRenderer is created (§48 forbids
+ * scenes from `new TilesRenderer(...)`). Owns the GlobalTileCache policy
+ * (§49): explicit byte/item budget shared by every tileset of this engine.
+ *
+ * Issue #25：terminal disposed state + pending identity——
+ * - dispose() 后 addTileset fail-fast，pending 创建的 late renderer
+ *   exactly-once 回收，不重新注册/挂载；
+ * - 同 URL（含 in-flight）重复 add 一律 fail-fast；
+ * - remove() 按 token compare-and-delete，stale handle 不误删后来者。
+ */
 export class TilesSystem {
-  private readonly tilesets = new Map<string, { renderer: TilesRendererLike; group: THREE.Group }>()
+  private readonly tilesets = new Map<string, TilesetEntry>()
+  private readonly pending = new Set<string>()
+  private readonly tokens = new Map<string, object>()
   private sharedCache: TilesRendererLike['lruCache'] | undefined
+  private disposed = false
 
   constructor(
     private readonly policy: TilesPolicy = {},
     private readonly factory: TilesRendererFactory = defaultFactory
   ) {}
 
+  /** 终态只读量（runtime fire-and-forget continuation 的守卫依据）。 */
+  get isDisposed(): boolean {
+    return this.disposed
+  }
+
   async addTileset(
     url: string,
     configure?: (renderer: TilesRendererLike, group: THREE.Group) => void
   ): Promise<TilesetHandle> {
-    if (this.tilesets.has(url)) {
+    if (this.disposed) {
+      throw new Error('[scene-engine] TilesSystem disposed (Issue #25 terminal state)')
+    }
+    // Issue #25-B：duplicate check 覆盖 in-flight add
+    if (this.tilesets.has(url) || this.pending.has(url)) {
       throw new Error(`[scene-engine] tileset already registered: ${url}`)
     }
-    const renderer = await this.factory(url)
+    this.pending.add(url)
+    let renderer: TilesRendererLike
+    try {
+      renderer = await this.factory(url)
+    } finally {
+      this.pending.delete(url)
+    }
+    if (this.disposed) {
+      // #25-A：late renderer 在 terminal teardown 后 exactly-once 回收
+      renderer.dispose()
+      throw new Error('[scene-engine] TilesSystem disposed during tileset load')
+    }
+    if (this.tilesets.has(url)) {
+      renderer.dispose()
+      throw new Error(`[scene-engine] tileset already registered: ${url}`)
+    }
     // Explicit cache policy (§49, Appendix A): never rely on defaults.
     if (renderer.lruCache) {
       if (this.sharedCache === undefined) this.sharedCache = renderer.lruCache
@@ -89,23 +134,39 @@ export class TilesSystem {
       renderer.errorTarget = this.policy.sseMultiplier
     }
     const group = renderer.group
-    this.tilesets.set(url, { renderer, group })
+    const token = {}
+    this.tilesets.set(url, { renderer, group, token })
+    this.tokens.set(url, token)
     configure?.(renderer, group)
+    let removed = false
     return {
       url,
       group,
       remove: () => {
-        const entry = this.tilesets.get(url)
-        if (!entry) return
-        this.tilesets.delete(url)
-        entry.group.removeFromParent()
-        entry.renderer.dispose()
+        if (removed) return
+        removed = true
+        this.removeTileset(url, token)
       }
     }
   }
 
+  /** Issue #25-C：compare-by-token——stale handle 不误删后来 owner 的 entry。 */
+  private removeTileset(url: string, token: object): void {
+    const entry = this.tilesets.get(url)
+    if (!entry || entry.token !== token) return
+    this.tilesets.delete(url)
+    this.tokens.delete(url)
+    entry.group.removeFromParent()
+    entry.renderer.dispose()
+  }
+
   has(url: string): boolean {
     return this.tilesets.has(url)
+  }
+
+  /** Issue #25-C：按 token 的 compare-and-delete（runtime terminal 兜底用）。 */
+  removeTilesetByToken(url: string, token: object): void {
+    this.removeTileset(url, token)
   }
 
   frame(camera: THREE.Camera, width: number, height: number): void {
@@ -143,6 +204,7 @@ export class TilesSystem {
   }
 
   dispose(): void {
+    this.disposed = true
     for (const { renderer, group } of [...this.tilesets.values()]) {
       group.removeFromParent()
       renderer.dispose()
