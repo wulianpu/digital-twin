@@ -14,13 +14,23 @@ export class EntitySystem implements EntitySystemApi {
   /** Issue #23：Fast Path buffer 引用——late registration catch-up 用。 */
   private readonly stateBuffer: SpatialStateBuffer | undefined
   private readonly globalKmUnits: boolean
+  /**
+   * Issue #29：render → logical 转换（Engine owner 注入，见 FloatingOriginState）。
+   * getPosition() 的 contract 是返回 **Engine 逻辑 scene 坐标**
+   * （SITE: frame-local m；GLOBAL: scene-axis ECEF km）——必须剔除
+   * floating-origin/camera-relative 的 Engine-owned ancestor shift；
+   * Scene-owned 祖先 transform 仍正常计入。
+   */
+  private readonly renderToLogical: ((v: THREE.Vector3) => void) | undefined
 
   constructor(
     stateBuffer?: SpatialStateBuffer,
-    globalKmUnits = false
+    globalKmUnits = false,
+    renderToLogical?: (v: THREE.Vector3) => void
   ) {
     this.stateBuffer = stateBuffer
     this.globalKmUnits = globalKmUnits
+    this.renderToLogical = renderToLogical
   }
 
   register(entity: EntityRef, object: THREE.Object3D): Disposable {
@@ -56,7 +66,10 @@ export class EntitySystem implements EntitySystemApi {
   getPosition(entity: EntityRef, out: { x: number; y: number; z: number }): boolean {
     const object = this.entries.get(entityKey(entity))
     if (!object) return false
+    // Issue #29：getWorldPosition 是 render-world 坐标（含 floating-origin
+    // ancestor shift）；必须经 renderToLogical 恢复 Engine 逻辑坐标后再返回。
     object.getWorldPosition(tempVec)
+    this.renderToLogical?.(tempVec)
     out.x = tempVec.x
     out.y = tempVec.y
     out.z = tempVec.z

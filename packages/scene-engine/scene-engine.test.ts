@@ -951,3 +951,101 @@ describe('EntitySystem late registration catch-up（Issue #23）', () => {
     expect(mesh.position.x).toBe(7)
   })
 })
+
+/** -------- Issue #29：getPosition 返回逻辑 scene 坐标（floating-origin 隔离） */
+
+import { FloatingOriginState } from './src/floatingOrigin'
+
+describe('EntitySystem.getPosition floating-origin 隔离（Issue #29）', () => {
+  // 模拟 Engine hierarchy：
+  //   Scene > EngineRoot（唯一 floating-origin shift 层，GlobalWorldRoot/BaseWorldRoot）
+  //        > sceneGroup（Scene-owned 局部 transform，必须计入逻辑坐标）
+  //        > entity
+  const makeHierarchy = (origin: FloatingOriginState) => {
+    const scene = new THREE.Scene()
+    const engineRoot = new THREE.Group()
+    const sceneGroup = new THREE.Group()
+    const entity = new THREE.Object3D()
+    scene.add(engineRoot)
+    engineRoot.add(sceneGroup)
+    sceneGroup.add(entity)
+    const entities = new EntitySystem(undefined, false, (v) => origin.renderToLogical(v))
+    entities.register({ namespace: 'agv', id: 'A' }, entity)
+    return { engineRoot, sceneGroup, entity, entities }
+  }
+  const readLogical = (entities: EntitySystem) => {
+    const out = { x: 0, y: 0, z: 0 }
+    expect(entities.getPosition({ namespace: 'agv', id: 'A' }, out)).toBe(true)
+    return out
+  }
+
+  it('GLOBAL：任意非零 worldOffset 下 getPosition 仍返回逻辑 ECEF-scene 坐标', () => {
+    const origin = new FloatingOriginState()
+    const { engineRoot, entity, entities } = makeHierarchy(origin)
+    const E = { x: 6378, y: 0, z: 0 } // 逻辑 ECEF-scene km
+    entity.position.set(E.x, E.y, E.z)
+
+    // camera-relative shift（§37.2）：offset = -cameraLogical
+    origin.set(-6378, 0, -20)
+    engineRoot.position.copy(origin.offset)
+    engineRoot.updateMatrixWorld(true)
+
+    // render-world 坐标是 (0,0,-20)——getPosition 必须仍返回 E
+    const out = readLogical(entities)
+    expect(out.x).toBeCloseTo(E.x, 6)
+    expect(out.y).toBeCloseTo(E.y, 6)
+    expect(out.z).toBeCloseTo(E.z, 6)
+  })
+
+  it('SITE：触发重基准（origin shift 累积）后 getPosition 仍返回原 frame-local 位置', () => {
+    const origin = new FloatingOriginState()
+    const { engineRoot, entity, entities } = makeHierarchy(origin)
+    const local = { x: 120, y: 0, z: -45 } // frame-local m
+    entity.position.set(local.x, local.y, local.z)
+
+    origin.set(-25_000, 0, 0)
+    engineRoot.position.copy(origin.offset)
+    engineRoot.updateMatrixWorld(true)
+
+    const out = readLogical(entities)
+    expect(out.x).toBeCloseTo(local.x, 6)
+    expect(out.y).toBeCloseTo(local.y, 6)
+    expect(out.z).toBeCloseTo(local.z, 6)
+  })
+
+  it('SITE：无 origin shift（offset=0）行为保持现状', () => {
+    const origin = new FloatingOriginState()
+    const { engineRoot, entity, entities } = makeHierarchy(origin)
+    entity.position.set(3, 4, 5)
+    engineRoot.updateMatrixWorld(true)
+    const out = readLogical(entities)
+    expect(out).toEqual({ x: 3, y: 4, z: 5 })
+  })
+
+  it('Scene-owned 祖先局部 transform 仍计入逻辑坐标，只剔除 Engine-owned origin', () => {
+    const origin = new FloatingOriginState()
+    const { engineRoot, sceneGroup, entity, entities } = makeHierarchy(origin)
+    sceneGroup.position.set(5, 0, 0)
+    entity.position.set(2, 1, 0)
+    origin.set(-100, -7, -3)
+    engineRoot.position.copy(origin.offset)
+    engineRoot.updateMatrixWorld(true)
+    const out = readLogical(entities)
+    expect(out.x).toBeCloseTo(7, 6)
+    expect(out.y).toBeCloseTo(1, 6)
+    expect(out.z).toBeCloseTo(0, 6)
+  })
+
+  it('FloatingOriginState round-trip：logical → render → logical 恒等', () => {
+    const origin = new FloatingOriginState()
+    origin.set(-12.5, 3000.25, -0.75)
+    const v = new THREE.Vector3(6378, 42, -17)
+    const logical = v.clone()
+    origin.logicalToRender(v)
+    expect(v.x).toBeCloseTo(logical.x - 12.5, 10)
+    origin.renderToLogical(v)
+    expect(v.x).toBeCloseTo(logical.x, 10)
+    expect(v.y).toBeCloseTo(logical.y, 10)
+    expect(v.z).toBeCloseTo(logical.z, 10)
+  })
+})

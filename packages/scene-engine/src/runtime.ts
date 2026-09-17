@@ -17,6 +17,7 @@ import { EnvironmentSystem } from './environment'
 import { GlobalEarthSystem } from './earth'
 import { TilesSystem } from './tiles'
 import { EntitySystem } from './entities'
+import { FloatingOriginState } from './floatingOrigin'
 import { PickingSystem } from './picking'
 import { AdaptiveQuality, profileSettings } from './adaptive'
 import { ContextLossGuard } from './contextLoss'
@@ -126,7 +127,12 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
         console.error(`[scene-engine] tileset 接入失败: ${url}`, error)
       })
   }
-  const entitySystem = new EntitySystem(options.stateBuffer, globalMode)
+  // Issue #29：floating-origin 状态唯一权威——EntitySystem 注入
+  // render→logical 转换，getPosition() 返回逻辑 scene 坐标而非 render 坐标。
+  const origin = new FloatingOriginState()
+  const entitySystem = new EntitySystem(options.stateBuffer, globalMode, (v) =>
+    origin.renderToLogical(v)
+  )
   const adaptive = new AdaptiveQuality(quality, maxQuality, (p) => {
     quality = p
     const s = profileSettings(p)
@@ -155,8 +161,9 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
   })
 
   // Shared floating-origin offset applied to BOTH scene graph roots so the
-  // camera stays numerically small (§37.2 / §65).
-  const worldOffset = new THREE.Vector3()
+  // camera stays numerically small (§37.2 / §65). State lives in FloatingOriginState
+  // (Issue #29)——render↔logical 转换的唯一权威。
+  const worldOffset = origin.offset
   const orbitPose = {
     position: { x: 0, y: 0, z: 0 },
     target: { x: 0, y: 0, z: 0 }
@@ -178,7 +185,7 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
       // Camera-relative ECEF (§37.2, Issue #17-r2)：唯一 -camera shift 层级
       // 是 globalWorldRoot——earth 与 Global SceneMountContainer 各只继承一次；
       // 同一 ECEF scene point 只减一次 camera pose（禁止双重 -p）。
-      worldOffset.set(-p.x, -p.y, -p.z)
+      origin.set(-p.x, -p.y, -p.z)
       globalWorldRoot.position.copy(worldOffset)
       camera.position.set(p.x + worldOffset.x, p.y + worldOffset.y, p.z + worldOffset.z)
     } else {
