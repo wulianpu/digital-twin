@@ -633,6 +633,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   测试 +1（默认 selection 继承 sink）。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #16 三次复审修复（P1：Standalone timer/listener/disposer contract）**：
+  ①gatewayTick 250ms interval 提升为 app-owned `tickTimer`——disposer 统一
+  clearInterval（HMR/重建不再叠加 interval 与 fixture 生成）；
+  ②beforeunload handler 持稳定引用（显式 teardown 时 removeEventListener），
+  且改走统一 shutdown transaction（与显式 disposer 共享 single-flight）；
+  ③返回类型改为 `Promise<() => Promise<void>>`（可 await 的 teardown
+  transaction）；app-level single-flight `disposePromise` 防并发双销。
+  验证：pnpm verify 全绿、313/313 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #18 四次复审修复（P1：production 未接入 SceneViewController）**：
   production scene 接入 `@twin/scenes-shared::SceneViewController`（prepareGraphics
   含 entity register 回调与 craneStates 重放；applyActiveView/dispatchView/
@@ -640,6 +649,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   移除旧 graphicsBooting 状态机；package.json 补 @twin/scenes-shared 依赖。
   至此全部 Catalog Scene 的 2D↔3D 状态机收敛到共享控制器。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #16 三次复审修复（P1：Standalone timer/listener/disposer contract）**：
+  ①gatewayTick 250ms interval 提升为 app-owned `tickTimer`——disposer 统一
+  clearInterval（HMR/重建不再叠加 interval 与 fixture 生成）；
+  ②beforeunload handler 持稳定引用（显式 teardown 时 removeEventListener），
+  且改走统一 shutdown transaction（与显式 disposer 共享 single-flight）；
+  ③返回类型改为 `Promise<() => Promise<void>>`（可 await 的 teardown
+  transaction）；app-level single-flight `disposePromise` 防并发双销。
+  验证：pnpm verify 全绿、313/313 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
   ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
@@ -754,6 +772,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   测试 +1（默认 selection 继承 sink）。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #16 三次复审修复（P1：Standalone timer/listener/disposer contract）**：
+  ①gatewayTick 250ms interval 提升为 app-owned `tickTimer`——disposer 统一
+  clearInterval（HMR/重建不再叠加 interval 与 fixture 生成）；
+  ②beforeunload handler 持稳定引用（显式 teardown 时 removeEventListener），
+  且改走统一 shutdown transaction（与显式 disposer 共享 single-flight）；
+  ③返回类型改为 `Promise<() => Promise<void>>`（可 await 的 teardown
+  transaction）；app-level single-flight `disposePromise` 防并发双销。
+  验证：pnpm verify 全绿、313/313 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #18 四次复审修复（P1：production 未接入 SceneViewController）**：
   production scene 接入 `@twin/scenes-shared::SceneViewController`（prepareGraphics
   含 entity register 回调与 craneStates 重放；applyActiveView/dispatchView/
@@ -761,6 +788,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   移除旧 graphicsBooting 状态机；package.json 补 @twin/scenes-shared 依赖。
   至此全部 Catalog Scene 的 2D↔3D 状态机收敛到共享控制器。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #16 三次复审修复（P1：Standalone timer/listener/disposer contract）**：
+  ①gatewayTick 250ms interval 提升为 app-owned `tickTimer`——disposer 统一
+  clearInterval（HMR/重建不再叠加 interval 与 fixture 生成）；
+  ②beforeunload handler 持稳定引用（显式 teardown 时 removeEventListener），
+  且改走统一 shutdown transaction（与显式 disposer 共享 single-flight）；
+  ③返回类型改为 `Promise<() => Promise<void>>`（可 await 的 teardown
+  transaction）；app-level single-flight `disposePromise` 防并发双销。
+  验证：pnpm verify 全绿、313/313 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
   ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
@@ -864,6 +900,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   测试 +1（默认 selection 继承 sink）。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #16 三次复审修复（P1：Standalone timer/listener/disposer contract）**：
+  ①gatewayTick 250ms interval 提升为 app-owned `tickTimer`——disposer 统一
+  clearInterval（HMR/重建不再叠加 interval 与 fixture 生成）；
+  ②beforeunload handler 持稳定引用（显式 teardown 时 removeEventListener），
+  且改走统一 shutdown transaction（与显式 disposer 共享 single-flight）；
+  ③返回类型改为 `Promise<() => Promise<void>>`（可 await 的 teardown
+  transaction）；app-level single-flight `disposePromise` 防并发双销。
+  验证：pnpm verify 全绿、313/313 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #18 四次复审修复（P1：production 未接入 SceneViewController）**：
   production scene 接入 `@twin/scenes-shared::SceneViewController`（prepareGraphics
   含 entity register 回调与 craneStates 重放；applyActiveView/dispatchView/
@@ -871,6 +916,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   移除旧 graphicsBooting 状态机；package.json 补 @twin/scenes-shared 依赖。
   至此全部 Catalog Scene 的 2D↔3D 状态机收敛到共享控制器。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #16 三次复审修复（P1：Standalone timer/listener/disposer contract）**：
+  ①gatewayTick 250ms interval 提升为 app-owned `tickTimer`——disposer 统一
+  clearInterval（HMR/重建不再叠加 interval 与 fixture 生成）；
+  ②beforeunload handler 持稳定引用（显式 teardown 时 removeEventListener），
+  且改走统一 shutdown transaction（与显式 disposer 共享 single-flight）；
+  ③返回类型改为 `Promise<() => Promise<void>>`（可 await 的 teardown
+  transaction）；app-level single-flight `disposePromise` 防并发双销。
+  验证：pnpm verify 全绿、313/313 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
   ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
@@ -985,6 +1039,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   测试 +1（默认 selection 继承 sink）。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #16 三次复审修复（P1：Standalone timer/listener/disposer contract）**：
+  ①gatewayTick 250ms interval 提升为 app-owned `tickTimer`——disposer 统一
+  clearInterval（HMR/重建不再叠加 interval 与 fixture 生成）；
+  ②beforeunload handler 持稳定引用（显式 teardown 时 removeEventListener），
+  且改走统一 shutdown transaction（与显式 disposer 共享 single-flight）；
+  ③返回类型改为 `Promise<() => Promise<void>>`（可 await 的 teardown
+  transaction）；app-level single-flight `disposePromise` 防并发双销。
+  验证：pnpm verify 全绿、313/313 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #18 四次复审修复（P1：production 未接入 SceneViewController）**：
   production scene 接入 `@twin/scenes-shared::SceneViewController`（prepareGraphics
   含 entity register 回调与 craneStates 重放；applyActiveView/dispatchView/
@@ -992,6 +1055,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   移除旧 graphicsBooting 状态机；package.json 补 @twin/scenes-shared 依赖。
   至此全部 Catalog Scene 的 2D↔3D 状态机收敛到共享控制器。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #16 三次复审修复（P1：Standalone timer/listener/disposer contract）**：
+  ①gatewayTick 250ms interval 提升为 app-owned `tickTimer`——disposer 统一
+  clearInterval（HMR/重建不再叠加 interval 与 fixture 生成）；
+  ②beforeunload handler 持稳定引用（显式 teardown 时 removeEventListener），
+  且改走统一 shutdown transaction（与显式 disposer 共享 single-flight）；
+  ③返回类型改为 `Promise<() => Promise<void>>`（可 await 的 teardown
+  transaction）；app-level single-flight `disposePromise` 防并发双销。
+  验证：pnpm verify 全绿、313/313 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
   ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy

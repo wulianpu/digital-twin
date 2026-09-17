@@ -90,8 +90,10 @@ const world = createWorldApi({
     }
   })
   options.dataAdapter?.(data)
+  // Issue #16-r3：app-owned timer——disposer 统一 clearInterval
+  let tickTimer: ReturnType<typeof setInterval> | undefined
   if (options.gatewayTick) {
-    const tickTimer = setInterval(() => options.gatewayTick!(Date.now()), 250)
+    tickTimer = setInterval(() => options.gatewayTick!(Date.now()), 250)
     tickTimer.unref?.()
   }
 
@@ -132,20 +134,31 @@ const world = createWorldApi({
   await host.mount(entry.default ?? entry, { sceneId: options.sceneId })
 
   // Safety net: tear down when the tab goes away (dev convenience).
-  window.addEventListener('beforeunload', () => {
-    void host.unmount()
-  })
+  // Issue #16-r3：handler 持稳定引用（显式 teardown 可移除），
+  // 且走统一 shutdown transaction（与显式 disposer 共享 single-flight）。
+  const onBeforeUnload = () => {
+    void dispose()
+  }
+  window.addEventListener('beforeunload', onBeforeUnload)
 
-  // Issue #16-r2：与 Portal 相同的 ownership 反向终止顺序——
-  // 1) await host.shutdown()（Scene unmount / MountScope / revoke 完整序列，
-  //    且 Host 进入 terminal：杜绝后续任何 mount 复活）
-  // 2) 之后才销毁 Data/Map/Graphics owner
-  return async () => {
+  // Issue #16-r2/r3：app-level single-flight terminal transaction——
+  // 并发 dispose 共享同一 Promise；app-owned timer/listener 一并回收。
+  let disposePromise: Promise<void> | undefined
+  const dispose = async (): Promise<void> => {
     observer.disconnect()
+    window.removeEventListener('beforeunload', onBeforeUnload)
+    if (tickTimer !== undefined) {
+      clearInterval(tickTimer)
+      tickTimer = undefined
+    }
     await host.shutdown()
     data.dispose()
     mapAccess?.dispose()
     graphicsAccess?.dispose()
+  }
+  return async () => {
+    disposePromise ??= dispose()
+    await disposePromise
   }
 }
 
