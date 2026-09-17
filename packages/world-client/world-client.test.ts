@@ -10,6 +10,29 @@ import {
   type WebSocketLike
 } from './src/public'
 
+function makeTrackedSocket() {
+  const sent: string[] = []
+  const socket = {
+    send: (d: string) => {
+      sent.push(d)
+    },
+    close: () => {},
+    onopen: null as (() => void) | null,
+    onclose: null,
+    onmessage: null,
+    onerror: null
+  }
+  const ws = createWebSocketSource({
+    url: 'ws://gateway.test',
+    socketFactory: () => socket as never,
+    heartbeatMs: 0
+  })
+  socket.onopen?.()
+  const frames = () =>
+    sent.map((f) => JSON.parse(f) as { type: string; query?: { contract: string } })
+  return { ws, frames }
+}
+
 const now = 1_700_000_000_000
 
 function envelope(overrides: Partial<DataEnvelope> = {}): DataEnvelope {
@@ -771,28 +794,7 @@ describe('SpatialStateBuffer timeline epoch（Issue #21-r2）', () => {
 /** -------- Issue #24：WebSocketSource query 语义 identity */
 
 describe('WebSocketSource query semantic identity（Issue #24）', () => {
-  function makeTrackedSocket() {
-    const sent: string[] = []
-    const socket = {
-      send: (d: string) => {
-        sent.push(d)
-      },
-      close: () => {},
-      onopen: null as (() => void) | null,
-      onclose: null,
-      onmessage: null,
-      onerror: null
-    }
-    const ws = createWebSocketSource({
-      url: 'ws://gateway.test',
-      socketFactory: () => socket as never,
-      heartbeatMs: 0
-    })
-    socket.onopen?.()
-    const frames = () =>
-      sent.map((f) => JSON.parse(f) as { type: string; query?: { contract: string } })
-    return { ws, frames }
-  }
+
 
   it('结构等价的 query 合并为一个 transport 订阅（一次 subscribe）', () => {
     const { ws, frames } = makeTrackedSocket()
@@ -1002,5 +1004,72 @@ describe('data plane correlation（Issue #24-r3-A）', () => {
     expect(gotA).toHaveLength(1)
     expect(gotLegacy).toHaveLength(1)
     ws.dispose()
+  })
+})
+
+/** ---------------- Issue #26：WorldClient / DataSource dispose 终态 */
+
+describe('dispose terminal state（Issue #26）', () => {
+  it('WorldClient dispose 后 subscribe/query fail-fast，不触发 source work', async () => {
+    const live = createScriptedSource({ kind: 'live' })
+    const useSpy = vi.spyOn(live, 'subscribe')
+    const client = new WorldClient({ sources: [live], sweepIntervalMs: 0 })
+    client.dispose()
+    expect(client.isDisposed).toBe(true)
+    expect(() => client.subscribe({ contract: 'twin.test@1' }, () => {})).toThrowError(
+      /client disposed/
+    )
+    expect(useSpy).not.toHaveBeenCalled()
+    await expect(client.query({ contract: 'twin.test@1' })).rejects.toThrowError(
+      /client disposed/
+    )
+    client.dispose() // 幂等
+    void 0
+  })
+
+  it('ScriptedSource dispose 后 emit/tick/start 不再投递或重建 timer', () => {
+    const history = createScriptedSource({ kind: 'history' })
+    const client = new WorldClient({ sources: [history], sweepIntervalMs: 0 })
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    client.dispose()
+
+    history.emit([envelope({ key: 'late' })]) // terminal 后不投递
+    history.tick(1234)
+    history.start(1000)
+    history.stop()
+
+    expect(client.peek('twin.test@1', 'late')).toBeUndefined()
+    expect(cb).not.toHaveBeenCalled() // handler 未被调用
+    client.dispose()
+  })
+
+  it('ReplaySource dispose 后 seek 不再投递/触发 onSeek', async () => {
+    const frames = [
+      { timeMs: 1000, envelopes: [envelope({ revision: 10, payload: { t: 'a' } })] }
+    ]
+    const history = createReplaySource({ frames })
+    const onSeek = vi.fn()
+    history.setOnSeek(onSeek)
+    const client = new WorldClient({ sources: [history], sweepIntervalMs: 0 })
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    client.dispose()
+
+    expect(() => history.seek(1000)).not.toThrow() // no-op，不投递
+    expect(cb).not.toHaveBeenCalled()
+    client.dispose()
+  })
+
+  it('WebSocketSource dispose 后 subscribe fail-fast，close 幂等且不重连', () => {
+    const { ws, frames } = makeTrackedSocket()
+    ws.dispose()
+    const noop = () => {}
+    expect(() => ws.subscribe({ contract: 't.c@1' }, noop)).toThrowError(
+      /disposed/
+    )
+    const subs = frames().filter((f) => f.type === 'subscribe')
+    expect(subs).toHaveLength(0)
+    ws.dispose() // 幂等
   })
 })

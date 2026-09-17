@@ -33,6 +33,8 @@ export interface ScriptedSource extends DataSource {
  * generators are supplied by apps / scenes.
  */
 export function createScriptedSource(options: ScriptedSourceOptions): ScriptedSource {
+  // Issue #26-B：terminal disposed state
+  let disposed = false
   let buffer: DataEnvelope[] = [...(options.initial ?? [])]
   const subscriptions = new Set<{
     query: DataQuery
@@ -53,6 +55,7 @@ export function createScriptedSource(options: ScriptedSourceOptions): ScriptedSo
       return buffer.filter((e) => matches(e, query))
     },
     subscribe(query, cb) {
+      if (disposed) throw new Error('[world-client] source disposed (subscribe rejected)')
       const sub = { query, cb }
       subscriptions.add(sub)
       return {
@@ -62,6 +65,7 @@ export function createScriptedSource(options: ScriptedSourceOptions): ScriptedSo
       }
     },
     emit(envelopes) {
+      if (disposed) return // Issue #26-B：terminal 后不再投递/重建 buffer
       buffer = envelopes.length > 0 ? [...buffer, ...envelopes].slice(-4096) : buffer
       // Issue #19：逐订阅隔离——坏 subscriber 不得让后续健康订阅持续饥饿
       for (const { query, cb } of subscriptions) {
@@ -76,12 +80,14 @@ export function createScriptedSource(options: ScriptedSourceOptions): ScriptedSo
       }
     },
     tick(timeMs) {
+      if (disposed) return // Issue #26-B：terminal 后不再生成/投递
       tickIndex++
       if (!options.generate) return
       const out = options.generate({ timeMs: timeMs ?? Date.now(), index: tickIndex })
       source.emit(out)
     },
     start(intervalMs) {
+      if (disposed) return // Issue #26-B：terminal 后不得重建 timer
       source.stop()
       timer = setInterval(() => source.tick(), intervalMs)
       timer.unref?.()
@@ -96,6 +102,8 @@ export function createScriptedSource(options: ScriptedSourceOptions): ScriptedSo
       return tickIndex
     },
     dispose() {
+      if (disposed) return // Issue #26-B：幂等
+      disposed = true
       source.stop()
       subscriptions.clear()
       buffer = []

@@ -686,6 +686,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #26 修复（P1：WorldClient/DataSource dispose 终态）**：
+  ①WorldClient：dispose 后 subscribe → throw（不创建 ActiveSubscription、
+  不调用 DataSource.subscribe）；query → reject 同类错误（不启动
+  source.snapshot I/O）；新增 isDisposed 只读量；dispose 幂等保持；
+  ②ScriptedSource terminal：emit/tick/start/subscribe 全部守卫——
+  不再重建 buffer/timer/delivery；
+  ③ReplaySource terminal：subscribe fail-fast，seek no-op（不投递/不触发
+  onSeek/不改变 delivery state）；
+  ④WebSocketSource：subscribe/onStateChange/onError dispose 后 fail-fast，
+  close/dispose 幂等且不重连；
+  ⑤确定性测试 +4（WorldClient fail-fast / ScriptedSource 隔离 /
+  ReplaySource no-op / WS terminal）。
+  验证：pnpm verify 全绿、318/318 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #21-r3 修复（P1：grow() 未扩容 slotEpoch）**：`grow()` 同步扩容
   slotEpoch 并复制旧值——扩容后的实体不再永久失去同 epoch 防乱序保护；
   回归测试：容量 16 → 20 实体扩容后同 epoch 乱序仍拒绝、beginEpoch 语义保持。
@@ -916,6 +930,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④history-replay backward scrub 测试增加 Fast Path 同源断言
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #26 修复（P1：WorldClient/DataSource dispose 终态）**：
+  ①WorldClient：dispose 后 subscribe → throw（不创建 ActiveSubscription、
+  不调用 DataSource.subscribe）；query → reject 同类错误（不启动
+  source.snapshot I/O）；新增 isDisposed 只读量；dispose 幂等保持；
+  ②ScriptedSource terminal：emit/tick/start/subscribe 全部守卫——
+  不再重建 buffer/timer/delivery；
+  ③ReplaySource terminal：subscribe fail-fast，seek no-op（不投递/不触发
+  onSeek/不改变 delivery state）；
+  ④WebSocketSource：subscribe/onStateChange/onError dispose 后 fail-fast，
+  close/dispose 幂等且不重连；
+  ⑤确定性测试 +4（WorldClient fail-fast / ScriptedSource 隔离 /
+  ReplaySource no-op / WS terminal）。
+  验证：pnpm verify 全绿、318/318 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #21-r3 修复（P1：grow() 未扩容 slotEpoch）**：`grow()` 同步扩容
   slotEpoch 并复制旧值——扩容后的实体不再永久失去同 epoch 防乱序保护；
@@ -1137,6 +1165,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #26 修复（P1：WorldClient/DataSource dispose 终态）**：
+  ①WorldClient：dispose 后 subscribe → throw（不创建 ActiveSubscription、
+  不调用 DataSource.subscribe）；query → reject 同类错误（不启动
+  source.snapshot I/O）；新增 isDisposed 只读量；dispose 幂等保持；
+  ②ScriptedSource terminal：emit/tick/start/subscribe 全部守卫——
+  不再重建 buffer/timer/delivery；
+  ③ReplaySource terminal：subscribe fail-fast，seek no-op（不投递/不触发
+  onSeek/不改变 delivery state）；
+  ④WebSocketSource：subscribe/onStateChange/onError dispose 后 fail-fast，
+  close/dispose 幂等且不重连；
+  ⑤确定性测试 +4（WorldClient fail-fast / ScriptedSource 隔离 /
+  ReplaySource no-op / WS terminal）。
+  验证：pnpm verify 全绿、318/318 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #21-r3 修复（P1：grow() 未扩容 slotEpoch）**：`grow()` 同步扩容
   slotEpoch 并复制旧值——扩容后的实体不再永久失去同 epoch 防乱序保护；
   回归测试：容量 16 → 20 实体扩容后同 epoch 乱序仍拒绝、beginEpoch 语义保持。
@@ -1367,6 +1409,20 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④history-replay backward scrub 测试增加 Fast Path 同源断言
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #26 修复（P1：WorldClient/DataSource dispose 终态）**：
+  ①WorldClient：dispose 后 subscribe → throw（不创建 ActiveSubscription、
+  不调用 DataSource.subscribe）；query → reject 同类错误（不启动
+  source.snapshot I/O）；新增 isDisposed 只读量；dispose 幂等保持；
+  ②ScriptedSource terminal：emit/tick/start/subscribe 全部守卫——
+  不再重建 buffer/timer/delivery；
+  ③ReplaySource terminal：subscribe fail-fast，seek no-op（不投递/不触发
+  onSeek/不改变 delivery state）；
+  ④WebSocketSource：subscribe/onStateChange/onError dispose 后 fail-fast，
+  close/dispose 幂等且不重连；
+  ⑤确定性测试 +4（WorldClient fail-fast / ScriptedSource 隔离 /
+  ReplaySource no-op / WS terminal）。
+  验证：pnpm verify 全绿、318/318 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #21-r3 修复（P1：grow() 未扩容 slotEpoch）**：`grow()` 同步扩容
   slotEpoch 并复制旧值——扩容后的实体不再永久失去同 epoch 防乱序保护；

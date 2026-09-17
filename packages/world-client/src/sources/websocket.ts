@@ -72,6 +72,7 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
   let socket: WebSocketLike | undefined
   let attempt = 0
   let closed = false
+  let disposed = false // Issue #26-B：terminal state
   let state: GatewayConnectionState = 'closed'
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined
   let lastPongAt = 0
@@ -258,6 +259,7 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       return state
     },
     onStateChange(cb): Disposable {
+      if (disposed) throw new Error('[world-client] source disposed (onStateChange rejected)')
       stateListeners.add(cb)
       return {
         dispose: () => {
@@ -266,6 +268,7 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       }
     },
     onError(cb): Disposable {
+      if (disposed) throw new Error('[world-client] source disposed (onError rejected)')
       errorListeners.add(cb)
       return {
         dispose: () => {
@@ -278,7 +281,11 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       // (server replays a snapshot after each subscribe, §5 of the protocol).
       return []
     },
-    subscribe(query, cb) {
+    subscribe(q, cb) {
+      if (closed || disposed) {
+        throw new Error('[world-client] source disposed (subscribe rejected)')
+      }
+      const query = q
       // Issue #24-C：canonical key、transport subscribe 帧与 correlation
       // 全部来自同一 normalizeQuery 结果（keys 集合语义：去重 + 排序）
       const normalized = normalizeQuery(query)
@@ -335,6 +342,8 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       errorListeners.clear()
     },
     dispose() {
+      if (disposed) return // 幂等
+      disposed = true
       source.close()
     }
   }

@@ -32,6 +32,8 @@ export interface ReplaySource extends DataSource {
 
 /** History source: replays recorded frames driven by the world clock. */
 export function createReplaySource(options: ReplaySourceOptions): ReplaySource {
+  // Issue #26-B：terminal disposed state
+  const disposed = false
   const sorted = [...options.frames].sort((a, b) => a.timeMs - b.timeMs)
   const subscriptions = new Set<{ query: DataQuery; cb: (e: DataEnvelope) => void }>()
   let lastEmittedFrameIndex = -1
@@ -79,6 +81,7 @@ export function createReplaySource(options: ReplaySourceOptions): ReplaySource {
       return frame.envelopes.filter((e) => matches(e, query))
     },
     subscribe(query, cb) {
+      if (disposed) throw new Error('[world-client] source disposed (subscribe rejected)')
       const sub = { query, cb }
       subscriptions.add(sub)
       return {
@@ -88,6 +91,7 @@ export function createReplaySource(options: ReplaySourceOptions): ReplaySource {
       }
     },
     seek(timeMs) {
+      if (disposed) return // Issue #26-B：terminal 后不投递/不触发 onSeek
       if (sorted.length === 0) return
       let index = -1
       for (let i = 0; i < sorted.length; i++) {

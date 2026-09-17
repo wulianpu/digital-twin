@@ -130,6 +130,11 @@ export class WorldClient implements DataApi {
     return this._mode
   }
 
+  /** Issue #26：terminal 只读量。 */
+  get isDisposed(): boolean {
+    return this.disposed
+  }
+
   setMode(mode: WorldMode): void {
     if (mode === this._mode || this.disposed) return
     this._mode = mode
@@ -178,6 +183,10 @@ export class WorldClient implements DataApi {
   }
 
   async query(query: DataQuery): Promise<readonly DataEnvelope[]> {
+    // Issue #26-A：dispose 后不启动新的 source.snapshot I/O
+    if (this.disposed) {
+      return Promise.reject(new Error('[world-client] client disposed (query rejected)'))
+    }
     const mode = this._mode
     const generation = this.modeGeneration
     const timeline = this.currentTimelineGen(mode)
@@ -204,6 +213,11 @@ export class WorldClient implements DataApi {
     cb: EnvelopeHandler,
     options?: SubscribeOptions
   ): DataSubscription {
+    // Issue #26-A：terminal guard——dispose 后不创建 ActiveSubscription、
+    // 不调用任何 DataSource.subscribe
+    if (this.disposed) {
+      throw new Error('[world-client] client disposed (subscribe rejected)')
+    }
     const sub: ActiveSubscription = {
       query,
       handlers: new Set([cb]),
