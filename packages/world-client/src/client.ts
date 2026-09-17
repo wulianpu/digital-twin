@@ -61,6 +61,13 @@ export interface DataApi {
    * LIVE 的 transport 乱序去重不受影响。
    */
   beginTimelineEpoch(mode?: WorldMode): void
+  /**
+   * Issue #27：authoritative snapshot reconciliation——envelopes 为该
+   * query 的完整当前集合；完成后撤销 cache 中“旧集合存在但新快照不存在”
+   * 的 key，并对订阅者投递 op='delete' 的 tombstone envelope。
+   * keys 过滤型 query 不参与 reconciliation（无法推断完整集合）。
+   */
+  reconcileSnapshot(query: DataQuery, envelopes: readonly DataEnvelope[]): void
   dispose(): void
 }
 
@@ -157,6 +164,29 @@ export class WorldClient implements DataApi {
       this.detachFromSources(sub)
       this.attachToSource(sub)
       void this.replaySnapshot(sub)
+    }
+  }
+
+  reconcileSnapshot(query: DataQuery, envelopes: readonly DataEnvelope[]): void {
+    if (this.disposed) return
+    // keys 过滤型 query 无法推断完整集合，不参与 reconciliation
+    if (query.keys && query.keys.length > 0) return
+    const byContract = this.cache.get(this._mode)?.get(query.contract)
+    if (!byContract) return
+    const present = new Set(envelopes.map((e) => e.key))
+    const removed: DataEnvelope[] = []
+    for (const k of [...byContract.keys()]) {
+      if (!present.has(k)) {
+        const env = byContract.get(k)!
+        byContract.delete(k)
+        removed.push({ ...env, op: 'delete', payload: undefined as never })
+      }
+    }
+    // tombstone 投递给匹配 contract 的活跃订阅
+    for (const sub of this.active) {
+      if (sub.query.contract !== query.contract) continue
+      if (sub.query.keys && sub.query.keys.length > 0) continue
+      for (const r of removed) this.deliver(sub, r)
     }
   }
 
@@ -394,6 +424,11 @@ export class WorldClient implements DataApi {
       return undefined
     }
     if (e.revision !== undefined) cursor.set(e.key, e.revision)
+    // Issue #27：tombstone——从当前 mode cache 撤销该 key 并投递删除事件
+    if (e.op === 'delete') {
+      this.cache.get(mode)?.get(e.contract)?.delete(e.key)
+      return e
+    }
     const effective =
       sub.staleAfterMs !== Number.POSITIVE_INFINITY &&
       e.sourceTime + sub.staleAfterMs < this.now() &&

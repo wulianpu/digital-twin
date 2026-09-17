@@ -208,6 +208,11 @@ const world = createWorldApi({
   // Spatial Fast Path adapter (§35): AGV envelopes feed the shared state
   // buffer OUTSIDE any reactive system; the engine reads at frame boundaries.
   data.subscribe({ contract: AGV_CONTRACT }, (env) => {
+    // Issue #27：tombstone——实体离场时撤销 Fast Path 中的 pose
+    if (env.op === 'delete') {
+      stateBuffer.remove(env.key)
+      return
+    }
     const s = decodeAgv(env)
     if (!s) return
     const q = quatFromHeadingPitchRoll(s.headingDeg * DEG2RAD, 0, 0)

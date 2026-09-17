@@ -23,6 +23,12 @@ export interface DataEnvelope<T = unknown> {
   revision?: number
   quality: DataQuality
   payload: T
+  /**
+   * Issue #27：实体生命周期操作。缺省等价 'upsert'；'delete' 为 tombstone——
+   * 表示该 key 已离场（payload 无意义），参与同 key revision 排序，
+   * 且不会被 staleness sweep 复活为 good。
+   */
+  op?: 'upsert' | 'delete'
 }
 
 export interface DataQuery {

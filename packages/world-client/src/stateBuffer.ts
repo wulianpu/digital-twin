@@ -48,6 +48,7 @@ export class SpatialStateBuffer {
   private dirty: Uint8Array
   private frameIds: string[]
   private readonly slots = new Map<string, number>()
+  private readonly freeSlots: number[] = []
   private _count = 0
 
   constructor(capacity = 1024) {
@@ -86,8 +87,12 @@ export class SpatialStateBuffer {
   upsert(key: string, pose: PoseWrite): void {
     let slot = this.slots.get(key)
     if (slot === undefined) {
-      if (this._count === this.capacity) this.grow()
-      slot = this._count++
+      // Issue #27：优先复用 free slot（bounded frame scan set）
+      slot = this.freeSlots.pop()
+      if (slot === undefined) {
+        if (this._count === this.capacity) this.grow()
+        slot = this._count++
+      }
       this.slots.set(key, slot)
       this.slotEpoch[slot] = this.epoch
       this.frameIds[slot] = pose.frameId
@@ -132,6 +137,21 @@ export class SpatialStateBuffer {
 
   has(key: string): boolean {
     return this.slots.has(key)
+  }
+
+  /**
+   * Issue #27：删除 key——slot 进入 free-list 可复用；
+   * 已删除 key 不再参与 drainDirty / readLatest。
+   * 返回 true 表示确实删除了活跃 key。
+   */
+  remove(key: string): boolean {
+    const slot = this.slots.get(key)
+    if (slot === undefined) return false
+    // free slot 入栈可复用；已删除 key 不再参与 drainDirty / readLatest
+    this.slots.delete(key)
+    this.dirty[slot] = 0
+    this.freeSlots.push(slot)
+    return true
   }
 
   readLatest(key: string, out: PoseSample): boolean {
@@ -202,6 +222,11 @@ export class SpatialStateBuffer {
       }
     }
     return visited
+  }
+
+  /** 当前活跃 key 数（= slots.size，已删除 key 不计入）。 */
+  get activeKeys(): number {
+    return this.slots.size
   }
 
   private grow(): void {

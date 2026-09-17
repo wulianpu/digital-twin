@@ -32,6 +32,7 @@ export function scopedDataApi(inner: DataApi, scope: MountScope): DataApi {
     },
     setMode: (mode) => inner.setMode(mode),
     beginTimelineEpoch: (mode) => inner.beginTimelineEpoch(mode),
+    reconcileSnapshot: (query, envelopes) => inner.reconcileSnapshot(query, envelopes),
     dispose: () => { /* no-op: 生命周期归 Composition Root（§81） */ }
   }
 }

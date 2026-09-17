@@ -53,6 +53,11 @@ export class VesselTrackRegistry {
     return t
   }
 
+  /** Issue #27：实体离场时丢弃其轨迹（幂等）。 */
+  drop(key: string): void {
+    this.tracks.delete(key)
+  }
+
   clear(): void {
     this.tracks.clear()
   }

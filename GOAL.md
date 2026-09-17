@@ -725,6 +725,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -736,6 +752,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
@@ -746,6 +778,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -757,6 +805,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
@@ -803,6 +867,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -814,6 +894,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
@@ -824,6 +920,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -835,6 +947,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
@@ -970,6 +1098,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -981,6 +1125,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
@@ -991,6 +1151,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1002,6 +1178,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
@@ -1048,6 +1240,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1059,6 +1267,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
@@ -1069,6 +1293,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1080,6 +1320,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
   ①MockAssetApi 增加 lease 计数同步（acquire/release 驱动 counters.assetLeases）；
@@ -1204,6 +1460,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1215,6 +1487,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
@@ -1225,6 +1513,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1236,6 +1540,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
@@ -1282,6 +1602,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1293,6 +1629,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
@@ -1303,6 +1655,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1314,6 +1682,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
@@ -1449,6 +1833,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1460,6 +1860,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
@@ -1470,6 +1886,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1481,6 +1913,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
@@ -1527,6 +1975,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1538,6 +2002,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
   ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
@@ -1548,6 +2028,22 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #25 修复（P1：TilesSystem pending/disposed ownership）**：
   ①terminal disposed state：dispose() 幂等且进入终态；disposed 后
   addTileset fail-fast；pending 创建的 late renderer exactly-once 回收
@@ -1559,3 +2055,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④runtime fire-and-forget continuation 遵守 terminal authority：
   dispose 先置 suspended，迟到的 tileset 挂载被守卫并 remove 兜底回收。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #27 修复（P1：实体离场/删除语义全链路）**：
+  ①协议：DataEnvelope 增加 `op?: 'upsert' | 'delete'` tombstone 字段——
+  delete 参与同 key revision 排序，晚到低 revision upsert 不复活实体；
+  stale 与 delete 语义分离；
+  ②WorldClient：ingest 处理 tombstone（从当前 mode cache 撤销 key 并投递
+  delete envelope 给订阅者）；新增 `reconcileSnapshot(query, envelopes)`——
+  keys 过滤型 query 不参与；完成后撤销 cache 中缺失 key 并投递
+  op='delete' tombstone；
+  ③SpatialStateBuffer：`remove(key)`（free-list slot 复用，bounded frame
+  scan）+ beginEpoch 后 slotEpoch < current 的首条 pose 无条件接受；
+  ④global-ships：tombstone → states.delete + tracks.drop + selection 清空；
+  ⑤测试：tombstone ordering / snapshot reconciliation（keys 过滤跳过）/
+  contract 隔离 / churn（1000 历史 key → 100 active 收敛）+9；
+  ⑥docs/gateway-protocol.md 增加 tombstone/reconciliation 协议说明。
+  验证：pnpm verify 全绿、325/325 单测、compliance 44/44、e2e 10/10。

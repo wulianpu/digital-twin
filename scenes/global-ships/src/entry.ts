@@ -130,6 +130,18 @@ const entry: SceneEntry = {
 
     // AIS business-state stream (1 Hz from the gateway).
     const subscription = ctx.data.subscribe({ contract: VESSEL_CONTRACT }, (env) => {
+      // Issue #27：tombstone——实体离场，撤销本地 state/track/selection
+      if (env.op === 'delete') {
+        states.delete(env.key)
+        tracks.drop(env.key)
+        if (state.selectedKey === env.key) {
+          state.selectedKey = undefined
+          mapHandle?.setSelected(undefined)
+          mapHandle?.setTrack(undefined)
+          ctx.selection.setPrimary(undefined)
+        }
+        return
+      }
       const s = decodeVessel(env)
       if (!s) return
       states.set(env.key, s)

@@ -334,6 +334,8 @@ export class MockDataApi implements DataApi {
 
   beginTimelineEpoch(): void {}
 
+  reconcileSnapshot(): void {}
+
   async query(): Promise<readonly DataEnvelope[]> {
     return this.envelopes
   }

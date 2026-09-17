@@ -1073,3 +1073,151 @@ describe('dispose terminal state（Issue #26）', () => {
     ws.dispose() // 幂等
   })
 })
+
+/** ---------------- Issue #27：tombstone / snapshot reconciliation / churn */
+
+describe('entity removal semantics（Issue #27）', () => {
+  function setupWithDelete() {
+    const live = createScriptedSource({ kind: 'live' })
+    const client = new WorldClient({
+      sources: [live],
+      sweepIntervalMs: 0,
+      now: () => 10_000
+    })
+    return { live, client }
+  }
+
+  it('delete(A)：peek(A) 立即为空，B 不受影响', () => {
+    const { live, client } = setupWithDelete()
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    live.emit([
+      { ...envelope({ key: 'A', payload: { v: 1 } }), op: 'upsert' as const },
+      { ...envelope({ key: 'B', payload: { v: 2 } }), op: 'upsert' as const }
+    ])
+    live.emit([{ ...envelope({ key: 'A', payload: {} }), op: 'delete' as const }])
+    expect(client.peek('twin.test@1', 'A')).toBeUndefined()
+    expect(client.peek('twin.test@1', 'B')).toBeDefined()
+    client.dispose()
+  })
+
+  it('delete 后晚到低 revision upsert 不复活 A；高 revision 可重建', () => {
+    const { live, client } = setupWithDelete()
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    live.emit([{ ...envelope({ key: 'A', payload: { v: 1 } }), op: 'upsert' as const }])
+    live.emit([{ ...envelope({ key: 'A', payload: {} }), op: 'delete' as const, revision: 10 }])
+    expect(client.peek('twin.test@1', 'A')).toBeUndefined()
+
+    // 晚到 rev=9 → 被 tombstone 游标拒绝
+    live.emit([{ ...envelope({ key: 'A', payload: { v: 9 } }), op: 'upsert' as const, revision: 9 }])
+    expect(client.peek('twin.test@1', 'A')).toBeUndefined()
+
+    // 合法 rev=11 → 重建
+    live.emit([{ ...envelope({ key: 'A', payload: { v: 11 } }), op: 'upsert' as const, revision: 11 }])
+    expect(client.peek('twin.test@1', 'A')?.payload).toEqual({ v: 11 })
+    client.dispose()
+  })
+
+  it('stale 与 delete 语义不同：delete 不参与 staleness sweep', () => {
+    let fakeNow = 10_000
+    const live = createScriptedSource({ kind: 'live' })
+    const client = new WorldClient({
+      sources: [live],
+      sweepIntervalMs: 0,
+      now: () => fakeNow
+    })
+    const seen: Array<string | undefined> = []
+    client.subscribe({ contract: 'twin.test@1' }, (e) => seen.push(e.key))
+    live.emit([{ ...envelope({ key: 'A', payload: { v: 1 } }), op: 'delete' as const }])
+    expect(client.peek('twin.test@1', 'A')).toBeUndefined()
+
+    fakeNow += 600_000 // 推进墙钟触发 sweep 窗口
+    client['sweepStale']?.()
+    // 已删除 key 不参与 sweep
+    expect(client.peek('twin.test@1', 'A')).toBeUndefined()
+    void seen
+    client.dispose()
+  })
+
+  it('churn：1,000 个历史 key 循环删除后 buffer 收敛到 active set', () => {
+    const buffer = new SpatialStateBuffer(64)
+    for (let round = 0; round < 10; round++) {
+      for (let i = 0; i < 100; i++) {
+        buffer.upsert(`churn/${round}-${i}`, { x: i, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, timeMs: round * 100 + i, frameId: 'f' })
+      }
+      for (let i = 0; i < 100; i++) buffer.remove(`churn/${round}-${i}`)
+    }
+    // 最终只保留 100 个 active key
+    for (let i = 0; i < 100; i++) {
+      buffer.upsert(`active/${i}`, { x: i, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, timeMs: 1, frameId: 'f' })
+    }
+    // drainDirty 的工作量不随已删除历史 key 数线性增长
+    let drained = 0
+    const n = buffer.drainDirty(() => drained++)
+    expect(n).toBe(100)
+    expect(buffer.count).toBe(100)
+  })
+})
+
+describe('snapshot reconciliation（Issue #27）', () => {
+  it('快照 {A,B} → {B}：completion 撤销 A，订阅者收到 tombstone', async () => {
+    const live = createScriptedSource({ kind: 'live' })
+    const client = new WorldClient({ sources: [live], sweepIntervalMs: 0 })
+    const got: Array<{ key: string; op?: string }> = []
+    client.subscribe({ contract: 'twin.test@1' }, (e) => got.push({ key: e.key, op: e.op }))
+    // 先建立 A、B 两个已有 key
+    live.emit([
+      envelope({ key: 'A', payload: {} }),
+      envelope({ key: 'B', payload: {} })
+    ])
+
+    client.reconcileSnapshot({ contract: 'twin.test@1' }, [
+      { contract: 'twin.test@1', key: 'B', sourceTime: 1, ingestTime: 1, quality: 'good', payload: {} }
+    ])
+
+    expect(client.peek('twin.test@1', 'A')).toBeUndefined()
+    expect(client.peek('twin.test@1', 'B')).toBeDefined()
+    const tombstones = got.filter((g) => g.key === 'A' && g.op === 'delete')
+    expect(tombstones).toHaveLength(1)
+    client.dispose()
+  })
+
+  it('reconciliation 只作用于对应 contract，不误删其它 contract 的 key', () => {
+    const live = createScriptedSource({ kind: 'live' })
+    const client = new WorldClient({ sources: [live], sweepIntervalMs: 0 })
+    // 分别通过各 contract 的订阅写入（WorldClient 正常投递路径）
+    const gotOther: string[] = []
+    client.subscribe({ contract: 'other@1' }, (e) => gotOther.push(e.key))
+    client.subscribe({ contract: 'twin.test@1' }, () => {})
+    live.emit([
+      { ...envelope({ key: 'A', payload: {} }), op: 'upsert' as const },
+      { contract: 'other@1', key: 'X', sourceTime: 1, ingestTime: 1, quality: 'good', payload: {} } as DataEnvelope
+    ])
+    expect(gotOther).toContain('X')
+    expect(client.peek('other@1', 'X')).toBeDefined()
+
+    // reconcile twin.test@1 → 只影响该 contract
+    client.reconcileSnapshot({ contract: 'twin.test@1' }, [])
+    expect(client.peek('twin.test@1', 'A')).toBeUndefined()
+    expect(client.peek('other@1', 'X')).toBeDefined() // 其它 contract 不受影响
+    client.dispose()
+  })
+
+  it('keys 过滤型 query 不参与 reconciliation', () => {
+    const live = createScriptedSource({ kind: 'live' })
+    const client = new WorldClient({ sources: [live], sweepIntervalMs: 0 })
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    live.emit([envelope({ key: 'A', payload: {} }), envelope({ key: 'B', payload: {} })])
+
+    // keys 过滤型 reconciliation 跳过
+    client.reconcileSnapshot(
+      { contract: 'twin.test@1', keys: ['A'] },
+      []
+    )
+    expect(client.peek('twin.test@1', 'A')).toBeDefined()
+    expect(client.peek('twin.test@1', 'B')).toBeDefined()
+    client.dispose()
+  })
+})
