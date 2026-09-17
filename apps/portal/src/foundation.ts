@@ -32,9 +32,14 @@ import {
   createSceneEngineViewBinding,
   createSceneViewDriver,
   getSceneEngineRuntime,
-  type GraphicsAccess,
+  type EngineRuntime,
+  type SceneEngineOptions,
   type SceneViewDriver
 } from '@twin/scene-engine'
+import {
+  createModeRoutingGraphicsAccess,
+  type ModeRoutingGraphicsAccess
+} from './frameMode'
 import { createViewService, SceneHost } from '@twin/scene-host'
 import type { ViewApi } from '@twin/sdk'
 import { ContentRegistry } from '@twin/content'
@@ -68,7 +73,8 @@ export interface PortalFoundation {
   selection: SelectionApi
   view: ViewApi
   mapAccess: MapAccess
-  graphicsAccess: GraphicsAccess
+  /** Issue #31：mode-routing access——`mode`/`active` 是 frame-mode authority。 */
+  graphicsAccess: ModeRoutingGraphicsAccess
   host: SceneHost
   gateway: DemoGateway
   stateBuffer: SpatialStateBuffer
@@ -96,7 +102,15 @@ export interface PortalFoundation {
 }
 
 export function buildFoundation(
-  options: { config?: PortalConfig; onHostError?: (error: unknown, phase: string) => void } = {}
+  options: {
+    config?: PortalConfig
+    onHostError?: (error: unknown, phase: string) => void
+    /**
+     * Issue #31：测试 DI——注入确定性 fake runtime 工厂（无 WebGL）。
+     * 生产路径不传，走真实 dynamic import 的 createRuntime。
+     */
+    graphicsRuntimeFactory?: (options: SceneEngineOptions) => Promise<EngineRuntime>
+  } = {}
 ): PortalFoundation {
   const config = options.config ?? loadPortalConfig()
     const onListenerError = (error: unknown, meta: { event: string }) => {
@@ -250,7 +264,12 @@ const world = createWorldApi({
     initialZoom: 14
   })
 
-  const graphicsAccess = createGraphicsAccess({
+  // Issue #31（方案 B）：GLOBAL 与 SITE 是两个 app-owned GraphicsAccess——
+  // `SceneEngineOptions.global` 是 boot-time 决策，单一 access 无法同时承载
+  // 混合 Scene catalog（global-ships 要求 global env，SITE Scene 要求
+  // frame-local meters）。frame mode 的唯一 authority 是 world.session.scope，
+  // 由 frameMode router 在 mount 的 use() 时刻提交。
+  const graphicsRuntimeOptions: SceneEngineOptions = {
     getViewport: () => containers.graphics,
     spatial,
     stateBuffer,
@@ -276,6 +295,20 @@ const world = createWorldApi({
       return spatial.getFrame(`frame:${scope.siteId}`)
     },
     getAssetLeaseCount: () => assets.leaseCount
+  }
+  const runtimeDeps = options.graphicsRuntimeFactory
+    ? { createRuntime: options.graphicsRuntimeFactory }
+    : {}
+  const siteGraphicsAccess = createGraphicsAccess(graphicsRuntimeOptions, runtimeDeps)
+  const globalGraphicsAccess = createGraphicsAccess(
+    { ...graphicsRuntimeOptions, global: true },
+    runtimeDeps
+  )
+  const graphicsAccess = createModeRoutingGraphicsAccess({
+    resolveMode: () => (world.session.scope.kind === 'global' ? 'global' : 'site'),
+    global: globalGraphicsAccess,
+    site: siteGraphicsAccess,
+    viewport: () => containers.graphics
   })
 
   // I4-1/I4-2：资产清单注册 + GLTFLoader 解码器装配（KTX2/DRACO/meshopt）
@@ -357,10 +390,13 @@ const world = createWorldApi({
     getSites: () => siteMap
   })
 
+  // Issue #31：View binding 与 graphics 读取同一 frame-mode authority
+  // （router 已提交 mode）——不再有独立的静态 `global: false` 配置点，
+  // 不存在 Engine=GLOBAL 但 View=SITE 的可构造正常状态。
   const binding = createSceneEngineViewBinding({
-    getRuntime: () => getSceneEngineRuntime(graphicsAccess),
+    getRuntime: () => getSceneEngineRuntime(graphicsAccess.active),
     spatial,
-    global: false
+    global: () => graphicsAccess.mode === 'global'
   })
   const sceneDriver: SceneViewDriver = createSceneViewDriver({
     getHandle: binding.handle,

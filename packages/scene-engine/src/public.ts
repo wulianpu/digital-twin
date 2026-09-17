@@ -171,13 +171,19 @@ export { UnsupportedAssetKindError } from './resources'
 export function createSceneEngineViewBinding(args: {
   getRuntime(): EngineRuntime | undefined
   spatial?: SpatialApi
-  global?: boolean
+  /**
+   * Issue #31：frame mode authority 必须与 getRuntime() 同源——传静态
+   * boolean 会复制出第二个可分叉的配置点（Engine=GLOBAL 但 View=SITE）。
+   * 传读取同一 mode authority 的 getter；每次 handle() 重新求值。
+   */
+  global?: boolean | (() => boolean)
 }): { handle(): SceneViewHandle | undefined } {
   return {
     handle() {
       const rt = args.getRuntime()
       if (!rt) return undefined
-      const global = args.global === true
+      const global =
+        typeof args.global === 'function' ? args.global() : args.global === true
       const spatial = args.spatial
       return {
         focusEntity(entityRef, defaultRangeMeters = 150) {
