@@ -160,6 +160,7 @@ export function getSceneEngineRuntime(access: GraphicsAccess): EngineRuntime | u
 export function createAssetApi(options: AssetApiOptions): AssetLeaseManager {
   return new AssetLeaseManager(options)
 }
+export { SpatialStateBuffer } from '@twin/world-client'
 export { UnsupportedAssetKindError } from './resources'
 
 /**
