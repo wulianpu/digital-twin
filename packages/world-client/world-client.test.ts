@@ -835,3 +835,65 @@ describe('WebSocketSource query semantic identity（Issue #24）', () => {
     ws.dispose()
   })
 })
+
+describe('query scope canonicalization（Issue #24-r2）', () => {
+  function makeFramesSocket() {
+    const sent: string[] = []
+    const socket = {
+      send: (d: string) => {
+        sent.push(d)
+      },
+      close: () => {},
+      onopen: null as (() => void) | null,
+      onclose: null,
+      onmessage: null,
+      onerror: null
+    }
+    const ws = createWebSocketSource({
+      url: 'ws://gateway.test',
+      socketFactory: () => socket as never,
+      heartbeatMs: 0
+    })
+    socket.onopen?.()
+    const frames = () => sent.map((f) => JSON.parse(f) as { type: string })
+    return { ws, frames }
+  }
+
+  it('嵌套 entity scope 不碰撞：不同 entity 是不同订阅', () => {
+    const { ws, frames } = makeFramesSocket()
+    const sA = ws.subscribe(
+      { contract: 't.c@1', scope: { kind: 'entity', entity: { namespace: 'agv', id: 'A' } } },
+      () => {}
+    )
+    ws.subscribe(
+      { contract: 't.c@1', scope: { kind: 'entity', entity: { namespace: 'agv', id: 'B' } } },
+      () => {}
+    )
+    let subs = frames().filter((f) => f.type === 'subscribe')
+    expect(subs).toHaveLength(2) // 语义不同 → 独立订阅
+
+    // 同 entity 的重复订阅 → 不重复发送（语义等价合并）
+    ws.subscribe(
+      { contract: 't.c@1', scope: { kind: 'entity', entity: { namespace: 'agv', id: 'A' } } },
+      () => {}
+    )
+    subs = frames().filter((f) => f.type === 'subscribe')
+    expect(subs).toHaveLength(2)
+
+    // A 全部释放 → B 不受影响（无 unsubscribe）
+    sA.dispose()
+    sA.dispose()
+    const unsubs = frames().filter((f) => f.type === 'unsubscribe')
+    expect(unsubs).toHaveLength(0)
+    ws.dispose()
+  })
+
+  it('site scope 同样参与语义 identity', () => {
+    const { ws, frames } = makeFramesSocket()
+    ws.subscribe({ contract: 't.c@1', scope: { kind: 'site', siteId: 's1' } }, () => {})
+    ws.subscribe({ contract: 't.c@1', scope: { kind: 'site', siteId: 's2' } }, () => {})
+    const subs = frames().filter((f) => f.type === 'subscribe')
+    expect(subs).toHaveLength(2)
+    ws.dispose()
+  })
+})

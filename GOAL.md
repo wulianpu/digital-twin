@@ -692,6 +692,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④确定性测试 +3（等价合并 / 最后一消费者 unsubscribe / keys 排序语义）。
   验证：pnpm verify 全绿、307/307 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #24 二次复审修复（P1：scope canonicalization 嵌套碰撞）**：
+  `JSON.stringify(scope, replacerArray)` 的 replacer 递归过滤导致 entity scope
+  的嵌套 namespace/id 被丢弃——不同 entity 的 scope 碰撞为同一 key。
+  修复：实现递归 `stableStringify`（对象按键排序展开、数组保序），
+  任意嵌套结构稳定编码。测试 +2（不同 entity scope 独立订阅 / site scope
+  语义 identity / 同 entity 重复订阅合并且 A 释放不影响 B）。
+  验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
   逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
@@ -792,6 +800,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③onopen 重连重发与 onmessage dispatch 适配新 map 结构；
   ④确定性测试 +3（等价合并 / 最后一消费者 unsubscribe / keys 排序语义）。
   验证：pnpm verify 全绿、307/307 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #24 二次复审修复（P1：scope canonicalization 嵌套碰撞）**：
+  `JSON.stringify(scope, replacerArray)` 的 replacer 递归过滤导致 entity scope
+  的嵌套 namespace/id 被丢弃——不同 entity 的 scope 碰撞为同一 key。
+  修复：实现递归 `stableStringify`（对象按键排序展开、数组保序），
+  任意嵌套结构稳定编码。测试 +2（不同 entity scope 独立订阅 / site scope
+  语义 identity / 同 entity 重复订阅合并且 A 释放不影响 B）。
+  验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
   ①MockAssetApi 增加 lease 计数同步（acquire/release 驱动 counters.assetLeases）；
@@ -883,6 +899,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④确定性测试 +3（等价合并 / 最后一消费者 unsubscribe / keys 排序语义）。
   验证：pnpm verify 全绿、307/307 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #24 二次复审修复（P1：scope canonicalization 嵌套碰撞）**：
+  `JSON.stringify(scope, replacerArray)` 的 replacer 递归过滤导致 entity scope
+  的嵌套 namespace/id 被丢弃——不同 entity 的 scope 碰撞为同一 key。
+  修复：实现递归 `stableStringify`（对象按键排序展开、数组保序），
+  任意嵌套结构稳定编码。测试 +2（不同 entity scope 独立订阅 / site scope
+  语义 identity / 同 entity 重复订阅合并且 A 释放不影响 B）。
+  验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
   逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
@@ -983,3 +1007,11 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③onopen 重连重发与 onmessage dispatch 适配新 map 结构；
   ④确定性测试 +3（等价合并 / 最后一消费者 unsubscribe / keys 排序语义）。
   验证：pnpm verify 全绿、307/307 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #24 二次复审修复（P1：scope canonicalization 嵌套碰撞）**：
+  `JSON.stringify(scope, replacerArray)` 的 replacer 递归过滤导致 entity scope
+  的嵌套 namespace/id 被丢弃——不同 entity 的 scope 碰撞为同一 key。
+  修复：实现递归 `stableStringify`（对象按键排序展开、数组保序），
+  任意嵌套结构稳定编码。测试 +2（不同 entity scope 独立订阅 / site scope
+  语义 identity / 同 entity 重复订阅合并且 A 释放不影响 B）。
+  验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。

@@ -82,12 +82,23 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       return new (WS as new (url: string) => WebSocketLike)(url)
     })
 
+  // Issue #24-r2：递归稳定序列化——嵌套对象（如 entity scope）按键排序
+  // 展开，不同语义的 scope 不可能碰撞。
+  function stableStringify(value: unknown): string {
+    if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'undefined'
+    if (Array.isArray(value)) {
+      return `[${value.map(stableStringify).join(',')}]`
+    }
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`)
+    return `{${entries.join(',')}}`
+  }
+
   function queryKey(query: DataQuery): string {
     // contract + 稳定编码的 scope + 排序去重后的 keys（§5：协议语义等价）
     const keys = query.keys ? [...query.keys].sort() : undefined
-    const scope = query.scope
-      ? JSON.stringify(query.scope, Object.keys(query.scope).sort())
-      : ''
+    const scope = query.scope ? stableStringify(query.scope) : ''
     return `${query.contract}|${scope}|${keys ? JSON.stringify(keys) : ''}`
   }
 
