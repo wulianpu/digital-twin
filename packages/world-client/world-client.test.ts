@@ -918,3 +918,89 @@ it('grow 扩容后同 epoch 防乱序保持（#21-r3 slotEpoch 扩容回归）',
   buffer.readLatest('agv/0', sample)
   expect(sample.timeMs).toBe(500)
 })
+
+describe('data plane correlation（Issue #24-r3-A）', () => {
+  function makeAttributedSocket() {
+    const sent: string[] = []
+    const socket = {
+      send: (d: string) => {
+        sent.push(d)
+      },
+      close: () => {},
+      onopen: null as (() => void) | null,
+      onclose: null as (() => void) | null,
+      onmessage: null as ((e: { data: unknown }) => void) | null,
+      onerror: null,
+      dispatchMessage(data: unknown) {
+        this.onmessage?.({ data })
+      }
+    }
+    const ws = createWebSocketSource({
+      url: 'ws://gateway.test',
+      socketFactory: () => socket as never,
+      heartbeatMs: 0
+    })
+    socket.onopen?.()
+    const frames = () => sent.map((f) => JSON.parse(f))
+    return { ws, socket, frames }
+  }
+
+  function agvAttributed(subscriptionId: string, key: string, x: number): string {
+    return JSON.stringify({
+      type: 'data',
+      subscriptionId,
+      envelopes: [
+        {
+          contract: 't.c@1',
+          key,
+          sourceTime: 1,
+          ingestTime: 1,
+          quality: 'good',
+          payload: { xMeters: x, yMeters: 0, headingDeg: 0 }
+        }
+      ]
+    })
+  }
+
+  it('attributed data 帧只投递给对应 subscription（scoped 订阅不收裸帧）', () => {
+    const { ws, socket, frames } = makeAttributedSocket()
+    const gotA: unknown[] = []
+    const gotB: unknown[] = []
+    const gotLegacy: unknown[] = []
+    ws.subscribe(
+      { contract: 't.c@1', scope: { kind: 'site', siteId: 'A' } },
+      (e) => gotA.push(e)
+    )
+    ws.subscribe(
+      { contract: 't.c@1', scope: { kind: 'site', siteId: 'B' } },
+      (e) => gotB.push(e)
+    )
+    ws.subscribe({ contract: 't.c@1' }, (e) => gotLegacy.push(e))
+    const subscribeFrames = frames().filter((f) => f.type === 'subscribe')
+    expect(subscribeFrames).toHaveLength(3)
+
+    // attributed 帧 → 只投递给该 subscriptionId 的 handlers
+    const idA = subscribeFrames[0]!.subscriptionId as string
+    socket.dispatchMessage(agvAttributed(idA, 'k/1', 42))
+    expect(gotA).toHaveLength(1)
+    expect(gotB).toHaveLength(0)
+    expect(gotLegacy).toHaveLength(0)
+
+    // legacy 裸 envelope 帧：只投递给非 scoped 订阅（scoped 不收裸帧）
+    socket.dispatchMessage(
+      JSON.stringify([
+        {
+          contract: 't.c@1',
+          key: 'k/2',
+          sourceTime: 2,
+          ingestTime: 2,
+          quality: 'good',
+          payload: {}
+        }
+      ])
+    )
+    expect(gotA).toHaveLength(1)
+    expect(gotLegacy).toHaveLength(1)
+    ws.dispose()
+  })
+})

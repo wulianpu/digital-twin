@@ -59,10 +59,14 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
   // Issue #24：query 语义 identity（canonical key）——
   // 协议语义等价的 query 合并为一个 transport 订阅；
   // 引用计数只在 0→1（发 subscribe）与 1→0（发 unsubscribe）时跨网络。
-  const subscriptions = new Map<
-    string,
-    { query: DataQuery; handlers: Set<(e: DataEnvelope) => void> }
-  >()
+  interface SubscriptionEntry {
+    query: DataQuery
+    handlers: Set<(e: DataEnvelope) => void>
+    subscriptionId: string
+  }
+  const subscriptions = new Map<string, SubscriptionEntry>()
+  /** subscriptionId → entry（attributed data 帧归属，Issue #24-r3-A）。 */
+  const bySubscriptionId = new Map<string, SubscriptionEntry>()
   const stateListeners = new Set<(state: GatewayConnectionState) => void>()
   const errorListeners = new Set<(frame: GatewayErrorFrame) => void>()
   let socket: WebSocketLike | undefined
@@ -94,6 +98,17 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`)
     return `{${entries.join(',')}}`
   }
+
+  // Issue #24-r3-C：normalizeQuery——canonical key、transport subscribe 帧
+  // 与 correlation 全部来自同一归一化结果（keys 集合语义：去重 + 排序）。
+  function normalizeQuery(query: DataQuery): DataQuery {
+    const keys = query.keys ? [...new Set(query.keys)].sort() : undefined
+    return keys
+      ? { contract: query.contract, scope: query.scope, keys }
+      : { contract: query.contract, scope: query.scope }
+  }
+
+  let correlationSeq = 0
 
   function queryKey(query: DataQuery): string {
     // contract + 稳定编码的 scope + 排序去重后的 keys（§5：协议语义等价）
@@ -143,8 +158,8 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
     s.onopen = () => {
       attempt = 0
       setState('open')
-      for (const { query } of subscriptions.values()) {
-        s.send(JSON.stringify({ type: 'subscribe', query }))
+      for (const { query, subscriptionId } of subscriptions.values()) {
+        s.send(JSON.stringify({ type: 'subscribe', subscriptionId, query }))
       }
       startHeartbeat(s)
     }
@@ -157,6 +172,7 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       } catch {
         return // Malformed frame: drop, keep the connection.
       }
+      console.log('[TRACE onmessage] parsed type:', (parsed as { type?: string }).type, 'keys:', Object.keys((parsed ?? {}) as object))
       if (parsed && (parsed as { type?: string }).type === 'pong') {
         lastPongAt = Date.now()
         return
@@ -165,15 +181,50 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
         for (const cb of [...errorListeners]) cb(parsed as GatewayErrorFrame)
         return
       }
-      const envelopes = Array.isArray(parsed) ? parsed : [parsed]
-      // 逐订阅/逐 handler 隔离：单个 subscriber throw 不击穿 emitter，
-      // 也不阻断同 batch 后续 envelope（DataSource 独立使用时契约仍安全）。
-      for (const e of envelopes as DataEnvelope[]) {
+      // Issue #24-r3：data plane 按 correlation 投递——
+      // attributed 帧（{type:'data', subscriptionId, envelopes}）只投递给该
+      // canonical entry；legacy 裸 envelope 帧只投递给 **非 scoped** 订阅
+      //（scoped 订阅的服务端数据必须经 correlation 归属，防止跨 scope 静默错投）。
+      const frame = parsed as {
+        type?: string
+        subscriptionId?: string
+        envelopes?: DataEnvelope[]
+      }
+      const envelopes: DataEnvelope[] = Array.isArray(parsed)
+        ? (parsed as DataEnvelope[])
+        : Array.isArray(frame.envelopes)
+          ? frame.envelopes
+          : [frame as unknown as DataEnvelope]
+      const attributed =
+        !Array.isArray(parsed) && frame.subscriptionId !== undefined
+      const scoped = (q: DataQuery): boolean =>
+        q.scope !== undefined && q.scope.kind !== 'global'
+
+      if (attributed) {
+        const id = frame.subscriptionId as string
+        const entry = bySubscriptionId.get(id)
+        if (!entry) return
+        for (const e of envelopes) {
+          if (e.contract !== entry.query.contract) continue
+          if (entry.query.keys && !entry.query.keys.includes(e.key)) continue
+          for (const cb of [...entry.handlers]) {
+            try {
+              cb(e)
+            } catch (error) {
+              console.error('[world-client] ws subscriber failed; isolated', error)
+            }
+          }
+        }
+        return
+      }
+
+      // legacy 裸 envelope 帧：只投递给非 scoped 订阅
+      for (const e of envelopes) {
         for (const { query, handlers } of subscriptions.values()) {
+          if (scoped(query)) continue
           if (e.contract !== query.contract) continue
           if (query.keys && !query.keys.includes(e.key)) continue
           for (const cb of [...handlers]) {
-            console.log('[TRACE ws] dispatch to handler, contract match:', e.contract === query.contract)
             try {
               cb(e)
             } catch (error) {
@@ -228,18 +279,31 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       return []
     },
     subscribe(query, cb) {
-      // Issue #24：query 语义 identity——协议语义等价的 query 合并；
-      // dispose 只在最后一个语义等价 consumer 释放时发送 unsubscribe
-      const key = queryKey(query)
+      // Issue #24-C：canonical key、transport subscribe 帧与 correlation
+      // 全部来自同一 normalizeQuery 结果（keys 集合语义：去重 + 排序）
+      const normalized = normalizeQuery(query)
+      const key = queryKey(normalized)
       let entry = subscriptions.get(key)
       const isNew = entry === undefined
       if (!entry) {
-        entry = { query, handlers: new Set() }
+        entry = {
+          query: normalized,
+          handlers: new Set(),
+          subscriptionId: `q-${++correlationSeq}`
+        }
         subscriptions.set(key, entry)
       }
       entry.handlers.add(cb)
+      bySubscriptionId.set(entry.subscriptionId, entry)
+      // Issue #24-r3-A：携带 connection-local correlation id
       if (isNew && socket && state === 'open') {
-        socket.send(JSON.stringify({ type: 'subscribe', query }))
+        socket.send(
+          JSON.stringify({
+            type: 'subscribe',
+            subscriptionId: entry.subscriptionId,
+            query: normalized
+          })
+        )
       }
 
       return {
@@ -249,7 +313,14 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
           current.handlers.delete(cb)
           if (current.handlers.size > 0) return // 仍有活跃 consumer
           subscriptions.delete(key)
-          socket?.send(JSON.stringify({ type: 'unsubscribe', query: current.query }))
+          bySubscriptionId.delete(current.subscriptionId)
+          socket?.send(
+            JSON.stringify({
+              type: 'unsubscribe',
+              subscriptionId: current.subscriptionId,
+              query: current.query
+            })
+          )
         }
       }
     },

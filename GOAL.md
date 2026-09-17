@@ -698,6 +698,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   Data/Map/Graphics owner。与 Portal 路径语义一致。
   验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #24 三次复审修复（P1：data plane 跨 scope 投递）**：
+  ①归一化 + correlation：normalizeQuery（keys 集合语义去重排序）→ queryKey →
+  connection-local `subscriptionId`（q-N）三处同源；subscribe 帧、onopen 重发、
+  unsubscribe 帧全部携带 subscriptionId；
+  ②data plane 按 correlation 投递——attributed 帧（{type:'data',
+  subscriptionId, envelopes}）只投递给对应 canonical entry；legacy 裸 envelope
+  帧只投递给非 scoped 订阅（scoped 订阅必须经 correlation 归属，防止跨 scope
+  静默错投）；
+  ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
+  ④移除 hot-path TRACE 调试残留（#24-r3-D）；
+  ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
   ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
@@ -729,6 +742,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   任意嵌套结构稳定编码。测试 +2（不同 entity scope 独立订阅 / site scope
   语义 identity / 同 entity 重复订阅合并且 A 释放不影响 B）。
   验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #24 三次复审修复（P1：data plane 跨 scope 投递）**：
+  ①归一化 + correlation：normalizeQuery（keys 集合语义去重排序）→ queryKey →
+  connection-local `subscriptionId`（q-N）三处同源；subscribe 帧、onopen 重发、
+  unsubscribe 帧全部携带 subscriptionId；
+  ②data plane 按 correlation 投递——attributed 帧（{type:'data',
+  subscriptionId, envelopes}）只投递给对应 canonical entry；legacy 裸 envelope
+  帧只投递给非 scoped 订阅（scoped 订阅必须经 correlation 归属，防止跨 scope
+  静默错投）；
+  ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
+  ④移除 hot-path TRACE 调试残留（#24-r3-D）；
+  ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
@@ -837,6 +863,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   Data/Map/Graphics owner。与 Portal 路径语义一致。
   验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #24 三次复审修复（P1：data plane 跨 scope 投递）**：
+  ①归一化 + correlation：normalizeQuery（keys 集合语义去重排序）→ queryKey →
+  connection-local `subscriptionId`（q-N）三处同源；subscribe 帧、onopen 重发、
+  unsubscribe 帧全部携带 subscriptionId；
+  ②data plane 按 correlation 投递——attributed 帧（{type:'data',
+  subscriptionId, envelopes}）只投递给对应 canonical entry；legacy 裸 envelope
+  帧只投递给非 scoped 订阅（scoped 订阅必须经 correlation 归属，防止跨 scope
+  静默错投）；
+  ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
+  ④移除 hot-path TRACE 调试残留（#24-r3-D）；
+  ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
   ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
@@ -868,6 +907,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   任意嵌套结构稳定编码。测试 +2（不同 entity scope 独立订阅 / site scope
   语义 identity / 同 entity 重复订阅合并且 A 释放不影响 B）。
   验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #24 三次复审修复（P1：data plane 跨 scope 投递）**：
+  ①归一化 + correlation：normalizeQuery（keys 集合语义去重排序）→ queryKey →
+  connection-local `subscriptionId`（q-N）三处同源；subscribe 帧、onopen 重发、
+  unsubscribe 帧全部携带 subscriptionId；
+  ②data plane 按 correlation 投递——attributed 帧（{type:'data',
+  subscriptionId, envelopes}）只投递给对应 canonical entry；legacy 裸 envelope
+  帧只投递给非 scoped 订阅（scoped 订阅必须经 correlation 归属，防止跨 scope
+  静默错投）；
+  ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
+  ④移除 hot-path TRACE 调试残留（#24-r3-D）；
+  ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
   ①MockAssetApi 增加 lease 计数同步（acquire/release 驱动 counters.assetLeases）；
@@ -965,6 +1017,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   Data/Map/Graphics owner。与 Portal 路径语义一致。
   验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #24 三次复审修复（P1：data plane 跨 scope 投递）**：
+  ①归一化 + correlation：normalizeQuery（keys 集合语义去重排序）→ queryKey →
+  connection-local `subscriptionId`（q-N）三处同源；subscribe 帧、onopen 重发、
+  unsubscribe 帧全部携带 subscriptionId；
+  ②data plane 按 correlation 投递——attributed 帧（{type:'data',
+  subscriptionId, envelopes}）只投递给对应 canonical entry；legacy 裸 envelope
+  帧只投递给非 scoped 订阅（scoped 订阅必须经 correlation 归属，防止跨 scope
+  静默错投）；
+  ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
+  ④移除 hot-path TRACE 调试残留（#24-r3-D）；
+  ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
   ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
@@ -996,6 +1061,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   任意嵌套结构稳定编码。测试 +2（不同 entity scope 独立订阅 / site scope
   语义 identity / 同 entity 重复订阅合并且 A 释放不影响 B）。
   验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #24 三次复审修复（P1：data plane 跨 scope 投递）**：
+  ①归一化 + correlation：normalizeQuery（keys 集合语义去重排序）→ queryKey →
+  connection-local `subscriptionId`（q-N）三处同源；subscribe 帧、onopen 重发、
+  unsubscribe 帧全部携带 subscriptionId；
+  ②data plane 按 correlation 投递——attributed 帧（{type:'data',
+  subscriptionId, envelopes}）只投递给对应 canonical entry；legacy 裸 envelope
+  帧只投递给非 scoped 订阅（scoped 订阅必须经 correlation 归属，防止跨 scope
+  静默错投）；
+  ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
+  ④移除 hot-path TRACE 调试残留（#24-r3-D）；
+  ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
@@ -1104,6 +1182,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   Data/Map/Graphics owner。与 Portal 路径语义一致。
   验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #24 三次复审修复（P1：data plane 跨 scope 投递）**：
+  ①归一化 + correlation：normalizeQuery（keys 集合语义去重排序）→ queryKey →
+  connection-local `subscriptionId`（q-N）三处同源；subscribe 帧、onopen 重发、
+  unsubscribe 帧全部携带 subscriptionId；
+  ②data plane 按 correlation 投递——attributed 帧（{type:'data',
+  subscriptionId, envelopes}）只投递给对应 canonical entry；legacy 裸 envelope
+  帧只投递给非 scoped 订阅（scoped 订阅必须经 correlation 归属，防止跨 scope
+  静默错投）；
+  ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
+  ④移除 hot-path TRACE 调试残留（#24-r3-D）；
+  ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
   ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
@@ -1135,3 +1226,16 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   任意嵌套结构稳定编码。测试 +2（不同 entity scope 独立订阅 / site scope
   语义 identity / 同 entity 重复订阅合并且 A 释放不影响 B）。
   验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #24 三次复审修复（P1：data plane 跨 scope 投递）**：
+  ①归一化 + correlation：normalizeQuery（keys 集合语义去重排序）→ queryKey →
+  connection-local `subscriptionId`（q-N）三处同源；subscribe 帧、onopen 重发、
+  unsubscribe 帧全部携带 subscriptionId；
+  ②data plane 按 correlation 投递——attributed 帧（{type:'data',
+  subscriptionId, envelopes}）只投递给对应 canonical entry；legacy 裸 envelope
+  帧只投递给非 scoped 订阅（scoped 订阅必须经 correlation 归属，防止跨 scope
+  静默错投）；
+  ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
+  ④移除 hot-path TRACE 调试残留（#24-r3-D）；
+  ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
