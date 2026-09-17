@@ -668,6 +668,13 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #16 二次复审修复（P1：Standalone Composition Root 绕过 teardown contract）**：
+  `apps/standalone/shared/bootstrap.ts` disposer 改为 async 并按 ownership
+  反向顺序终止——先 `await host.shutdown()`（terminal：Scene unmount /
+  MountScope / revoke 完整序列 + Host 终态禁止后续 mount），再销毁
+  Data/Map/Graphics owner。与 Portal 路径语义一致。
+  验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
   ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
@@ -776,6 +783,13 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④history-replay backward scrub 测试增加 Fast Path 同源断言
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #16 二次复审修复（P1：Standalone Composition Root 绕过 teardown contract）**：
+  `apps/standalone/shared/bootstrap.ts` disposer 改为 async 并按 ownership
+  反向顺序终止——先 `await host.shutdown()`（terminal：Scene unmount /
+  MountScope / revoke 完整序列 + Host 终态禁止后续 mount），再销毁
+  Data/Map/Graphics owner。与 Portal 路径语义一致。
+  验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
@@ -875,6 +889,13 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #16 二次复审修复（P1：Standalone Composition Root 绕过 teardown contract）**：
+  `apps/standalone/shared/bootstrap.ts` disposer 改为 async 并按 ownership
+  反向顺序终止——先 `await host.shutdown()`（terminal：Scene unmount /
+  MountScope / revoke 完整序列 + Host 终态禁止后续 mount），再销毁
+  Data/Map/Graphics owner。与 Portal 路径语义一致。
+  验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
   ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
@@ -983,6 +1004,13 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④history-replay backward scrub 测试增加 Fast Path 同源断言
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #16 二次复审修复（P1：Standalone Composition Root 绕过 teardown contract）**：
+  `apps/standalone/shared/bootstrap.ts` disposer 改为 async 并按 ownership
+  反向顺序终止——先 `await host.shutdown()`（terminal：Scene unmount /
+  MountScope / revoke 完整序列 + Host 终态禁止后续 mount），再销毁
+  Data/Map/Graphics owner。与 Portal 路径语义一致。
+  验证：pnpm verify 全绿、312/312 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：

@@ -136,9 +136,13 @@ const world = createWorldApi({
     void host.unmount()
   })
 
-  return () => {
+  // Issue #16-r2：与 Portal 相同的 ownership 反向终止顺序——
+  // 1) await host.shutdown()（Scene unmount / MountScope / revoke 完整序列，
+  //    且 Host 进入 terminal：杜绝后续任何 mount 复活）
+  // 2) 之后才销毁 Data/Map/Graphics owner
+  return async () => {
     observer.disconnect()
-    void host.unmount()
+    await host.shutdown()
     data.dispose()
     mapAccess?.dispose()
     graphicsAccess?.dispose()
