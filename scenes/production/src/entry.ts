@@ -1,4 +1,5 @@
 import type { SceneContext, SceneEntry, SceneMount } from '@twin/sdk'
+import { SceneViewController } from '@twin/scenes-shared'
 import { reactive } from 'vue'
 import { CRANE_CONTRACT, craneEntity, decodeCrane, type CraneState } from '@twin/domain-crane'
 import { AGV_CONTRACT, decodeAgv, type AgvState } from '@twin/domain-agv'
@@ -64,7 +65,52 @@ const entry: SceneEntry = {
     // eslint-disable-next-line prefer-const -- 先声明后异步赋值：闭包在就绪前需可选语义
     let mapHandle: ProductionMapHandle | undefined
     let graphicsHandle: ProductionGraphicsHandle | undefined
-    let graphicsBooting = false
+
+    // Issue #18-r4：view intent 控制器——joinable single-flight boot +
+    // monotonic intent + latest-view commit（与其它 Catalog Scene 收敛）
+    const view = new SceneViewController({
+      prepareGraphics: async () => {
+        // Lazy: three downloads only on first entry to 3D (§26).
+        const { mountGraphics } = await import('./graphics')
+        const handle = await mountGraphics(ctx, layout, (key, object) => {
+          const [namespace, id] = key.split('/')
+          return ctx.graphics!.currentContext!.entities.register({ namespace, id }, object)
+        })
+        if (ctx.signal.aborted) {
+          handle.dispose() // #1：unmount 竞态下的迟到引导立即自毁
+          graphicsHandle = undefined
+          return handle
+        }
+        graphicsHandle = handle
+        // 重放 boot 间隙积累的 crane 状态（与旧行为一致）
+        for (const [code, s] of craneStates) graphicsHandle.applyCraneState(code, s)
+        return handle
+      },
+      applyActiveView: (v) => {
+        if (v === 'graphics') {
+          mapHandle?.suspend()
+          ctx.graphics?.currentContext?.resume()
+        } else {
+          mapHandle?.resume()
+          ctx.graphics?.currentContext?.suspend()
+        }
+      },
+      suspendGraphics: () => ctx.graphics?.currentContext?.suspend(),
+      dispatchView: (v) =>
+        uiLayer.element.dispatchEvent(
+          new CustomEvent('twin-scene-view', { detail: { view: v }, bubbles: true })
+        ),
+      isAborted: () => ctx.signal.aborted,
+      onIntentChanged: (v) => {
+        state.view = v
+      },
+      onRollbackToMap: () => {
+        state.view = 'map'
+      },
+      onGraphicsError: (error) => {
+        console.error('[production] 3D 初始化失败（已回滚到 2D）', error)
+      }
+    })
 
     const craneStates = new Map<string, CraneState>()
     const agvStates = new Map<string, AgvState>()
@@ -85,42 +131,9 @@ const entry: SceneEntry = {
         .map((a) => ({ alarmId: a.alarmId, severity: a.severity, message: a.message }))
     }
 
-    async function setView(view: 'map' | 'graphics'): Promise<void> {
-      if (state.view === view) return
-      state.view = view
-      if (view === 'graphics') {
-        if (!graphicsHandle && !graphicsBooting) {
-          graphicsBooting = true
-          // Lazy: three downloads only on first entry to 3D (§26).
-          const { mountGraphics } = await import('./graphics')
-          graphicsHandle = await mountGraphics(ctx, layout, (key, object) => {
-            const [namespace, id] = key.split('/')
-            return ctx.graphics!.currentContext!.entities.register({ namespace, id }, object)
-          })
-          // 问题6：late bootstrap——unmount 后完成的异步引导立即自毁
-          if (ctx.signal.aborted) {
-            graphicsHandle.dispose()
-            graphicsHandle = undefined
-            graphicsBooting = false
-            return
-          }
-          graphicsBooting = false
-          for (const [code, s] of craneStates) graphicsHandle.applyCraneState(code, s)
-        }
-        mapHandle?.suspend()
-        ctx.graphics?.currentContext?.resume()
-      } else {
-        mapHandle?.resume()
-        ctx.graphics?.currentContext?.suspend()
-      }
-      uiLayer.element.dispatchEvent(
-        new CustomEvent('twin-scene-view', { detail: { view }, bubbles: true })
-      )
-    }
-
     const panel = mountProductionPanel(uiLayer.element, {
       state,
-      onSetView: (view) => void setView(view),
+      onSetView: (v) => void view.setView(v),
       onAckAlarm: acknowledgeAlarm,
       onExport: exportSnapshot
     })

@@ -13,7 +13,8 @@
     "@twin/sdk": "workspace:*",
     "@twin/spatial": "workspace:*",
     "@twin/world": "workspace:*",
-    "vue": "^3.5.42"
+    "vue": "^3.5.42",
+    "@twin/scenes-shared": "workspace:*"
   },
   "devDependencies": {
     "@types/three": "0.186.0",

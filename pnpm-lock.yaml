@@ -589,6 +589,9 @@ importers:
       '@twin/domain-production':
         specifier: workspace:*
         version: link:../../domains/production
+      '@twin/scenes-shared':
+        specifier: workspace:*
+        version: link:../shared
       '@twin/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk

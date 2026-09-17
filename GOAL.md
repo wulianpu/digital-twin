@@ -633,6 +633,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   测试 +1（默认 selection 继承 sink）。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #18 四次复审修复（P1：production 未接入 SceneViewController）**：
+  production scene 接入 `@twin/scenes-shared::SceneViewController`（prepareGraphics
+  含 entity register 回调与 craneStates 重放；applyActiveView/dispatchView/
+  onIntentChanged/onRollbackToMap/onGraphicsError 与其它 Catalog Scene 收敛），
+  移除旧 graphicsBooting 状态机；package.json 补 @twin/scenes-shared 依赖。
+  至此全部 Catalog Scene 的 2D↔3D 状态机收敛到共享控制器。
+  验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
   ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
   （GLB-backed 契约）→ GLTF loader；tileset → 明确 fail-fast 指向
@@ -687,6 +695,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   Root 路径（createWorldApi({ onListenerError }) → world.selection.onChange）
   的 selection.changed 故障现在可观察，不再静默吞掉；
   测试 +1（默认 selection 继承 sink）。
+  验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #18 四次复审修复（P1：production 未接入 SceneViewController）**：
+  production scene 接入 `@twin/scenes-shared::SceneViewController`（prepareGraphics
+  含 entity register 回调与 craneStates 重放；applyActiveView/dispatchView/
+  onIntentChanged/onRollbackToMap/onGraphicsError 与其它 Catalog Scene 收敛），
+  移除旧 graphicsBooting 状态机；package.json 补 @twin/scenes-shared 依赖。
+  至此全部 Catalog Scene 的 2D↔3D 状态机收敛到共享控制器。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
@@ -734,6 +750,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   测试 +1（默认 selection 继承 sink）。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #18 四次复审修复（P1：production 未接入 SceneViewController）**：
+  production scene 接入 `@twin/scenes-shared::SceneViewController`（prepareGraphics
+  含 entity register 回调与 craneStates 重放；applyActiveView/dispatchView/
+  onIntentChanged/onRollbackToMap/onGraphicsError 与其它 Catalog Scene 收敛），
+  移除旧 graphicsBooting 状态机；package.json 补 @twin/scenes-shared 依赖。
+  至此全部 Catalog Scene 的 2D↔3D 状态机收敛到共享控制器。
+  验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
   ①`AssetLeaseManager.load()` 引入 `AssetKind` dispatch——glb/gltf/collision-proxy
   （GLB-backed 契约）→ GLTF loader；tileset → 明确 fail-fast 指向
@@ -788,6 +812,14 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   Root 路径（createWorldApi({ onListenerError }) → world.selection.onChange）
   的 selection.changed 故障现在可观察，不再静默吞掉；
   测试 +1（默认 selection 继承 sink）。
+  验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #18 四次复审修复（P1：production 未接入 SceneViewController）**：
+  production scene 接入 `@twin/scenes-shared::SceneViewController`（prepareGraphics
+  含 entity register 回调与 craneStates 重放；applyActiveView/dispatchView/
+  onIntentChanged/onRollbackToMap/onGraphicsError 与其它 Catalog Scene 收敛），
+  移除旧 graphicsBooting 状态机；package.json 补 @twin/scenes-shared 依赖。
+  至此全部 Catalog Scene 的 2D↔3D 状态机收敛到共享控制器。
   验证：pnpm verify 全绿、300/300 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #22 修复（P1：AssetKind 运行时路由缺失）**：
