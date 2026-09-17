@@ -717,3 +717,53 @@ describe('WorldClient subscriber fault boundary（Issue #19）', () => {
     client.dispose()
   })
 })
+
+/** -------- Issue #21-r2：SpatialStateBuffer timeline epoch */
+
+
+
+describe('SpatialStateBuffer timeline epoch（Issue #21-r2）', () => {
+  function pose(timeMs: number) {
+    return { x: timeMs, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, timeMs, frameId: 'f' }
+  }
+
+  it('同 epoch 内防乱序：旧时间戳仍被拒绝', () => {
+    const buffer = new SpatialStateBuffer()
+    buffer.upsert('agv/1', pose(2000))
+    buffer.upsert('agv/1', pose(1000)) // 乱序 → 丢弃
+    const sample = createPoseSample()
+    expect(buffer.readLatest('agv/1', sample)).toBe(true)
+    expect(sample.timeMs).toBe(2000)
+  })
+
+  it('beginEpoch 后较低时间戳被接受（新 timeline 第一条 pose 无条件成为当前值）', () => {
+    const buffer = new SpatialStateBuffer()
+    buffer.upsert('agv/1', pose(2000)) // 旧 timeline
+    buffer.beginEpoch() // 新 timeline epoch
+    buffer.upsert('agv/1', pose(500)) // 较低时间戳 = 更早的正确世界状态
+    const sample = createPoseSample()
+    buffer.readLatest('agv/1', sample)
+    expect(sample.timeMs).toBe(500)
+  })
+
+  it('epoch 内再次乱序仍被拒绝（保护不回退）', () => {
+    const buffer = new SpatialStateBuffer()
+    buffer.upsert('agv/1', pose(2000))
+    buffer.beginEpoch()
+    buffer.upsert('agv/1', pose(500)) // 新 epoch 第一条
+    buffer.upsert('agv/1', pose(100)) // 同 epoch 乱序 → 仍拒绝
+    const sample = createPoseSample()
+    buffer.readLatest('agv/1', sample)
+    expect(sample.timeMs).toBe(500)
+  })
+
+  it('未调用 beginEpoch 时行为不变（LIVE 单调保护保持）', () => {
+    const buffer = new SpatialStateBuffer()
+    buffer.upsert('agv/1', pose(2000))
+    buffer.upsert('agv/1', pose(3000))
+    buffer.upsert('agv/1', pose(2500))
+    const sample = createPoseSample()
+    buffer.readLatest('agv/1', sample)
+    expect(sample.timeMs).toBe(3000)
+  })
+})

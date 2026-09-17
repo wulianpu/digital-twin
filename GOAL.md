@@ -655,6 +655,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   tileset/ktx2/binary/kinematic 标注 reserved 或专用 owner。
   验证：pnpm verify 全绿、299/299 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #21 二次复审修复（P1：Fast Path 未继承 timeline epoch）**：
+  ①`SpatialStateBuffer.beginEpoch()`：epoch 计数递增（slot 保留最近更新
+  epoch）——upsert 时 slot.epoch < current epoch → 该 key 新 timeline 第一条
+  pose 无条件接受；同 epoch 内时间戳防乱序照常（LIVE 单调保护不回退）；
+  ②WorldClient 新增 `onTimelineChange` 统一 transition hook（setMode 进入新
+  mode / beginTimelineEpoch 均触发）——foundation 接线 `stateBuffer.beginEpoch()`，
+  保证 Fast Path 与 data.peek 共享同一 ordering authority；
+  ③stateBuffer 确定性测试 +4（同 epoch 防乱序 / 新 epoch 低时间戳接受 /
+  epoch 内乱序仍拒绝 / 未 beginEpoch 行为不变）；
+  ④history-replay backward scrub 测试增加 Fast Path 同源断言
+  （readLatest timeMs ≤ scrub 目标时间）。
+  验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
   逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
@@ -718,6 +731,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④docs/asset-pipeline.md：acquire 入口收窄为 glb/gltf/collision-proxy，
   tileset/ktx2/binary/kinematic 标注 reserved 或专用 owner。
   验证：pnpm verify 全绿、299/299 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #21 二次复审修复（P1：Fast Path 未继承 timeline epoch）**：
+  ①`SpatialStateBuffer.beginEpoch()`：epoch 计数递增（slot 保留最近更新
+  epoch）——upsert 时 slot.epoch < current epoch → 该 key 新 timeline 第一条
+  pose 无条件接受；同 epoch 内时间戳防乱序照常（LIVE 单调保护不回退）；
+  ②WorldClient 新增 `onTimelineChange` 统一 transition hook（setMode 进入新
+  mode / beginTimelineEpoch 均触发）——foundation 接线 `stateBuffer.beginEpoch()`，
+  保证 Fast Path 与 data.peek 共享同一 ordering authority；
+  ③stateBuffer 确定性测试 +4（同 epoch 防乱序 / 新 epoch 低时间戳接受 /
+  epoch 内乱序仍拒绝 / 未 beginEpoch 行为不变）；
+  ④history-replay backward scrub 测试增加 Fast Path 同源断言
+  （readLatest timeMs ≤ scrub 目标时间）。
+  验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
   ①MockAssetApi 增加 lease 计数同步（acquire/release 驱动 counters.assetLeases）；
@@ -772,6 +798,19 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   tileset/ktx2/binary/kinematic 标注 reserved 或专用 owner。
   验证：pnpm verify 全绿、299/299 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #21 二次复审修复（P1：Fast Path 未继承 timeline epoch）**：
+  ①`SpatialStateBuffer.beginEpoch()`：epoch 计数递增（slot 保留最近更新
+  epoch）——upsert 时 slot.epoch < current epoch → 该 key 新 timeline 第一条
+  pose 无条件接受；同 epoch 内时间戳防乱序照常（LIVE 单调保护不回退）；
+  ②WorldClient 新增 `onTimelineChange` 统一 transition hook（setMode 进入新
+  mode / beginTimelineEpoch 均触发）——foundation 接线 `stateBuffer.beginEpoch()`，
+  保证 Fast Path 与 data.peek 共享同一 ordering authority；
+  ③stateBuffer 确定性测试 +4（同 epoch 防乱序 / 新 epoch 低时间戳接受 /
+  epoch 内乱序仍拒绝 / 未 beginEpoch 行为不变）；
+  ④history-replay backward scrub 测试增加 Fast Path 同源断言
+  （readLatest timeMs ≤ scrub 目标时间）。
+  验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
   逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
@@ -835,3 +874,16 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④docs/asset-pipeline.md：acquire 入口收窄为 glb/gltf/collision-proxy，
   tileset/ktx2/binary/kinematic 标注 reserved 或专用 owner。
   验证：pnpm verify 全绿、299/299 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #21 二次复审修复（P1：Fast Path 未继承 timeline epoch）**：
+  ①`SpatialStateBuffer.beginEpoch()`：epoch 计数递增（slot 保留最近更新
+  epoch）——upsert 时 slot.epoch < current epoch → 该 key 新 timeline 第一条
+  pose 无条件接受；同 epoch 内时间戳防乱序照常（LIVE 单调保护不回退）；
+  ②WorldClient 新增 `onTimelineChange` 统一 transition hook（setMode 进入新
+  mode / beginTimelineEpoch 均触发）——foundation 接线 `stateBuffer.beginEpoch()`，
+  保证 Fast Path 与 data.peek 共享同一 ordering authority；
+  ③stateBuffer 确定性测试 +4（同 epoch 防乱序 / 新 epoch 低时间戳接受 /
+  epoch 内乱序仍拒绝 / 未 beginEpoch 行为不变）；
+  ④history-replay backward scrub 测试增加 Fast Path 同源断言
+  （readLatest timeMs ≤ scrub 目标时间）。
+  验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。

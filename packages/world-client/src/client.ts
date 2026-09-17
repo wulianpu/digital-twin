@@ -33,6 +33,13 @@ export interface WorldClientOptions {
     key: string
     mode: WorldMode
   }) => void
+  /**
+   * Issue #21-r2：统一的 mode/timeline transition hook——setMode 进入新的
+   * world mode、beginTimelineEpoch 开启新 timeline 时触发。Composition Root
+   * 借此同步推进 Fast Path（SpatialStateBuffer）的 ordering epoch，
+   * 保证两条表示链共享同一 authority。
+   */
+  onTimelineChange?: (info: { mode: WorldMode; generation: number; timeline: number }) => void
 }
 
 export interface DataApi {
@@ -133,6 +140,12 @@ export class WorldClient implements DataApi {
     // 防止上次访问遗留的旧时间线值被当作当前 truth。LIVE 是 transport
     // ordering authority：游标与缓存跨模式往返保留，重连旧快照仍被去重。
     if (mode !== 'live') this.resetModeState(mode)
+    // Issue #21-r2：统一 transition hook
+    this.options.onTimelineChange?.({
+      mode,
+      generation: this.modeGeneration,
+      timeline: this.currentTimelineGen(mode)
+    })
     // Re-route active subscriptions; replay a snapshot so consumers receive
     // an immediate delta for the new mode.
     for (const sub of this.active) {
@@ -268,12 +281,14 @@ export class WorldClient implements DataApi {
     const source = this.sources.get(mode)
     if (!source) return
     const forward: EnvelopeHandler = (e) => {
+      console.log('[TRACE] forward entry:', e.key, 'mode:', this._mode, 'sub-mode:', mode, 'gen:', this.currentTimelineGen(mode), timeline)
       // #11-A/r2：setMode 会 detach 旧 source，但已入队的转发回调仍可能晚到；
       // 同 mode 的旧 timeline epoch 事件（seek 前入队）同样丢弃——
       // 否则旧 epoch 高 revision 会抢占游标、反过来吞掉新 epoch 低 revision。
       if (this.disposed || this._mode !== mode) return
       if (this.currentTimelineGen(mode) !== timeline) return
       const effective = this.ingest(e, sub)
+      console.log('[TRACE] forward effective:', effective !== undefined, 'key:', e.key)
       if (effective) this.deliver(sub, effective)
     }
     sub.sourceDisposables.set(mode, source.subscribe(sub.query, forward))

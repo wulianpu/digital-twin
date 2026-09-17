@@ -106,6 +106,12 @@ describe('HISTORY backward scrub（Issue #11）', () => {
       // 且回退后看到的是更早的 sourceTime（世界时间与状态一致）
       const recent = seen.slice(-(afterBackward - afterForward))
       expect(recent.every((s) => s.sourceTime <= historyStart + 120_000)).toBe(true)
+
+      // Issue #21-r2：Fast Path 与 data.peek 同源——backward scrub 后
+      // SpatialStateBuffer 必须已同步回退到 t1（不能冻结在 t2）
+      const bufferSample = { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, frameId: '', timeMs: 0 }
+      expect(foundation.stateBuffer.readLatest('agv/AGV-01', bufferSample)).toBe(true)
+      expect(bufferSample.timeMs).toBeLessThanOrEqual(historyStart + 120_000)
     } finally {
       foundation.dispose()
     }

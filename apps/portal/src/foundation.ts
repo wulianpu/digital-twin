@@ -71,6 +71,7 @@ export interface PortalFoundation {
   graphicsAccess: GraphicsAccess
   host: SceneHost
   gateway: DemoGateway
+  stateBuffer: SpatialStateBuffer
   config: PortalConfig
   /** 单次 tick：驱动演示网关 / HISTORY 回放推进 / 模式同步（测试与定时器共用）。 */
   tick(): void
@@ -156,6 +157,12 @@ const world = createWorldApi({
     defaultStaleAfterMs: 10_000,
     sweepIntervalMs: 30_000,
     now: () => world.time.now().epochMillis,
+    // Issue #21-r2：统一 mode/timeline transition hook——Fast Path 的
+    // ordering epoch 与 WorldClient 同源（History seek / mode 切换时
+    // buffer 进入新 epoch，旧时间戳不再压制新 timeline）
+    onTimelineChange: () => {
+      stateBuffer.beginEpoch()
+    },
     // Issue #19：Scene data handler 故障对 Composition Root 可观察
     //（限频：同一 handler 仅 ok→failing 转变时上报一次）
     onSubscriberError: (error, meta) => {
@@ -392,6 +399,7 @@ const world = createWorldApi({
     graphicsAccess,
     host,
     gateway,
+    stateBuffer,
     config,
     tick: foundationTick,
     searchEntities(term: string, limit = 8) {

@@ -39,6 +39,9 @@ export function createPoseSample(): PoseSample {
 const STRIDE = 9 // x y z qx qy qz qw timeMs (prevFrame same layout, minus frameId)
 
 export class SpatialStateBuffer {
+  /** Issue #21-r2：timeline epoch——新 epoch 的第一条 pose 无条件接受。 */
+  private epoch = 0
+  private slotEpoch: Uint32Array
   private capacity: number
   private current: Float64Array
   private previous: Float64Array
@@ -49,10 +52,25 @@ export class SpatialStateBuffer {
 
   constructor(capacity = 1024) {
     this.capacity = Math.max(16, capacity)
+    this.slotEpoch = new Uint32Array(this.capacity)
     this.current = new Float64Array(this.capacity * STRIDE)
     this.previous = new Float64Array(this.capacity * STRIDE)
     this.dirty = new Uint8Array(this.capacity)
     this.frameIds = new Array(this.capacity).fill('')
+  }
+
+  /**
+   * Issue #21-r2：开启新的 timeline epoch（World mode 切换 / HISTORY 主动
+   * seek/rewind 时调用）。新 epoch 内每个 key 的第一条 pose 无条件成为当前值
+   * ——较低 sourceTime 是“用户选择的更早正确世界状态”，不是 stale packet。
+   * 旧 epoch 的乱序保护只作用于同一 epoch 内。
+   */
+  beginEpoch(): void {
+    // 只递增计数器——slot 保留其最近更新 epoch。upsert 时：
+    // slot.epoch < current epoch → 该 key 在新 timeline 的第一条 pose
+    // 无条件接受（较低 sourceTime 是合法的历史状态）；
+    // slot.epoch === current epoch → 同 epoch 内时间戳防乱序照常。
+    this.epoch++
   }
 
   get count(): number {
@@ -71,6 +89,7 @@ export class SpatialStateBuffer {
       if (this._count === this.capacity) this.grow()
       slot = this._count++
       this.slots.set(key, slot)
+      this.slotEpoch[slot] = this.epoch
       this.frameIds[slot] = pose.frameId
       const c = slot * STRIDE
       this.current[c] = pose.x
@@ -86,8 +105,9 @@ export class SpatialStateBuffer {
       return
     }
     const c = slot * STRIDE
-    // Ignore out-of-order / duplicate timestamps.
-    if (pose.timeMs < this.current[c + 7]) return
+    // 同 epoch 内防乱序/重复时间戳；跨 epoch（新 timeline）无条件接受。
+    if (this.slotEpoch[slot] === this.epoch && pose.timeMs < this.current[c + 7]) return
+    this.slotEpoch[slot] = this.epoch
     this.previous[c] = this.current[c]
     this.previous[c + 1] = this.current[c + 1]
     this.previous[c + 2] = this.current[c + 2]
