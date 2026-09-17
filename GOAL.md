@@ -711,6 +711,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
+  ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
+  beforeunload 与显式 disposer 共享 single-flight，exactly-once；
+  ②返回类型改为 `Promise<() => Promise<void>>`——awaitability 落到静态契约；
+  ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
+  移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
+  后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
   ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
@@ -754,6 +763,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
   ④移除 hot-path TRACE 调试残留（#24-r3-D）；
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
+  ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
+  beforeunload 与显式 disposer 共享 single-flight，exactly-once；
+  ②返回类型改为 `Promise<() => Promise<void>>`——awaitability 落到静态契约；
+  ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
+  移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
+  后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
@@ -876,6 +894,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
+  ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
+  beforeunload 与显式 disposer 共享 single-flight，exactly-once；
+  ②返回类型改为 `Promise<() => Promise<void>>`——awaitability 落到静态契约；
+  ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
+  移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
+  后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
   ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
@@ -919,6 +946,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
   ④移除 hot-path TRACE 调试残留（#24-r3-D）；
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
+  ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
+  beforeunload 与显式 disposer 共享 single-flight，exactly-once；
+  ②返回类型改为 `Promise<() => Promise<void>>`——awaitability 落到静态契约；
+  ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
+  移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
+  后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
@@ -1030,6 +1066,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
+  ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
+  beforeunload 与显式 disposer 共享 single-flight，exactly-once；
+  ②返回类型改为 `Promise<() => Promise<void>>`——awaitability 落到静态契约；
+  ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
+  移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
+  后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
   ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
@@ -1073,6 +1118,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
   ④移除 hot-path TRACE 调试残留（#24-r3-D）；
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
+  ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
+  beforeunload 与显式 disposer 共享 single-flight，exactly-once；
+  ②返回类型改为 `Promise<() => Promise<void>>`——awaitability 落到静态契约；
+  ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
+  移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
+  后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
@@ -1195,6 +1249,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
+  ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
+  beforeunload 与显式 disposer 共享 single-flight，exactly-once；
+  ②返回类型改为 `Promise<() => Promise<void>>`——awaitability 落到静态契约；
+  ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
+  移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
+  后再 reject（调用方不再永远拿不到 disposer）。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
   late registration catch-up 缺失）**：
   ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
@@ -1238,4 +1301,13 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ③bySubscriptionId map（subscribe 时登记、unsubscribe 时清除）；
   ④移除 hot-path TRACE 调试残留（#24-r3-D）；
   ⑤确定性测试 +1：attributed 帧 scoped 隔离 + legacy 帧只投非 scoped。
+  验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #16 四次复审修复（P1：single-flight 入口 + 启动失败 rollback）**：
+  ①`disposePromise` 移入唯一 terminal teardown 入口 `dispose()` 自身——
+  beforeunload 与显式 disposer 共享 single-flight，exactly-once；
+  ②返回类型改为 `Promise<() => Promise<void>>`——awaitability 落到静态契约；
+  ③启动 transaction 可回滚——entryLoader/host.mount 失败时停止 timer、
+  移除 beforeunload listener、经统一 dispose 销毁已建 owner、清理 DOM shell
+  后再 reject（调用方不再永远拿不到 disposer）。
   验证：pnpm verify 全绿、314/314 单测、compliance 44/44、e2e 10/10。

@@ -35,7 +35,9 @@ export interface StandaloneOptions {
  * load ONE scene → mount. No SceneCoordinator, no portal shell. The exact
  * same scene source runs under the Portal without modification (§58).
  */
-export async function runStandaloneApp(options: StandaloneOptions): Promise<() => void> {
+export async function runStandaloneApp(
+  options: StandaloneOptions
+): Promise<() => Promise<void>> {
   document.title = options.title
 
   // Minimal layout: header + viewport. Plain DOM on purpose — scenes must
@@ -135,8 +137,8 @@ const world = createWorldApi({
 
   // Safety net: tear down when the tab goes away (dev convenience).
   // Issue #16-r3：handler 持稳定引用（显式 teardown 可移除），
-  // 且走统一 shutdown transaction（与显式 disposer 共享 single-flight）。
-  const onBeforeUnload = () => {
+  // 且直接调用统一 terminal dispose（single-flight 在 dispose 入口）。
+  const onBeforeUnload = (): void => {
     void dispose()
   }
   window.addEventListener('beforeunload', onBeforeUnload)
