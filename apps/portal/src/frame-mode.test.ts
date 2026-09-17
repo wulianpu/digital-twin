@@ -129,6 +129,28 @@ async function buildWithFactory() {
   return { foundation, created }
 }
 
+/**
+ * #31 复审：deferred runtime factory——boot promise 由测试手动 resolve，
+ * 且 fake runtime 在 factory 调用时刻即 append canvas（与真实
+ * createRuntime 一致：canvas/资源在 promise resolve 前已就绪）。
+ * 用于覆盖 pending boot × rapid mode switch 竞态。
+ */
+async function buildWithDeferredFactory() {
+  type DeferredBoot = CreatedBoot & { resolve: () => void }
+  const boots: DeferredBoot[] = []
+  const foundation = buildFoundation({
+    graphicsRuntimeFactory: (opts) =>
+      new Promise<EngineRuntime>((resolve) => {
+        const fake = makeFakeRuntime(opts)
+        boots.push({ opts, ...fake, resolve: () => resolve(fake.rt) })
+      })
+  })
+  disposables.push(foundation)
+  const viewport = document.createElement('div')
+  foundation.workspace.setContainers({ map: viewport, graphics: viewport })
+  return { foundation, boots, viewport }
+}
+
 const TARGET = {
   longitudeDegrees: 122.5,
   latitudeDegrees: 30.2,
@@ -223,5 +245,95 @@ describe('Portal frame-mode authority（Issue #31）', () => {
     await foundation.dispose()
     expect(created[0]!.dispose).toHaveBeenCalled()
     expect(created[1]!.dispose).toHaveBeenCalled()
+  })
+
+  // ---- #31 复审：pending boot × rapid mode switch 竞态 ----
+
+  it('GLOBAL pending → SITE commit → GLOBAL late resolve：晚到 runtime 被 quarantine，无双 RAF/双 canvas', async () => {
+    const { foundation, boots, viewport } = await buildWithDeferredFactory()
+    const useG1 = foundation.graphicsAccess.use() // GLOBAL boot 挂起
+    expect(boots).toHaveLength(1)
+    expect(boots[0]!.opts.global).toBe(true)
+
+    // SITE 提交（authority 易主时 GLOBAL 仍 pending）
+    foundation.world.setScope({ kind: 'site', siteId: 'site-changxing' })
+    const useS = foundation.graphicsAccess.use()
+    boots[1]!.resolve()
+    await useS
+    expect(foundation.graphicsAccess.mode).toBe('site')
+    expect(boots).toHaveLength(2)
+    const g = boots[0]!
+    const s = boots[1]!
+    // fake 与真实 createRuntime 一致：canvas 在 boot resolve 前已 append
+    expect(s.canvas.parentElement).toBe(viewport)
+
+    // GLOBAL boot 晚到——必须被 quarantine，不得自留在 viewport/RAF
+    g.resolve()
+    await expect(useG1).rejects.toThrow(/superseded/)
+    expect(g.suspend).toHaveBeenCalled()
+    expect(g.canvas.parentElement).not.toBe(viewport)
+    expect(s.canvas.parentElement).toBe(viewport)
+    expect(foundation.graphicsAccess.mode).toBe('site')
+  })
+
+  it('SITE pending → GLOBAL commit → SITE late resolve：对称方向同样不复活', async () => {
+    const { foundation, boots, viewport } = await buildWithDeferredFactory()
+    foundation.world.setScope({ kind: 'site', siteId: 'site-changxing' })
+    const useS = foundation.graphicsAccess.use() // SITE boot 挂起
+
+    // 切回 GLOBAL 并完成提交
+    foundation.world.setScope({ kind: 'global' })
+    const useG = foundation.graphicsAccess.use()
+    boots.find((b) => b.opts.global === true)!.resolve()
+    await useG
+    expect(foundation.graphicsAccess.mode).toBe('global')
+
+    // SITE boot 晚到 → quarantine
+    boots.find((b) => b.opts.global !== true)!.resolve()
+    await expect(useS).rejects.toThrow(/superseded/)
+    const s = boots.find((b) => b.opts.global !== true)!
+    const g = boots.find((b) => b.opts.global === true)!
+    expect(s.suspend).toHaveBeenCalled()
+    expect(s.canvas.parentElement).not.toBe(viewport)
+    expect(g.canvas.parentElement).toBe(viewport)
+  })
+
+  it('GLOBAL(1) pending → SITE → GLOBAL(2)：旧 continuation 不误伤重新选中的 GLOBAL authority', async () => {
+    const { foundation, boots, viewport } = await buildWithDeferredFactory()
+    const useG1 = foundation.graphicsAccess.use() // GLOBAL(1) boot 挂起（single-flight）
+
+    foundation.world.setScope({ kind: 'site', siteId: 'site-changxing' })
+    const useS = foundation.graphicsAccess.use()
+    boots[1]!.resolve()
+    await useS
+    expect(foundation.graphicsAccess.mode).toBe('site')
+
+    // 切回 GLOBAL——与 GLOBAL(1) 共享同一 single-flight boot
+    foundation.world.setScope({ kind: 'global' })
+    const useG2 = foundation.graphicsAccess.use()
+    const g = boots.find((b) => b.opts.global === true)!
+    const s = boots.find((b) => b.opts.global !== true)!
+    g.resolve()
+
+    // 两个 continuation 都命中同侧 access：不得 suspend 最新 GLOBAL authority
+    await useG2
+    await expect(useG1).resolves.toBeDefined()
+    expect(g.suspend).not.toHaveBeenCalled()
+    expect(g.resume).toHaveBeenCalled()
+    expect(s.suspend).toHaveBeenCalled()
+    expect(foundation.graphicsAccess.mode).toBe('global')
+    expect(g.canvas.parentElement).toBe(viewport)
+    expect(s.canvas.parentElement).not.toBe(viewport)
+  })
+
+  it('dispose 时 pending boot 沿 #14 terminal 机制回收（router 不复活）', async () => {
+    const { foundation, boots } = await buildWithDeferredFactory()
+    const useG1 = foundation.graphicsAccess.use()
+    await foundation.dispose()
+    // 先让 pending boot settle——晚到的 boot 被 #14-B commit 前重校验回收
+    boots[0]!.resolve()
+    await expect(useG1).rejects.toThrow()
+    expect(boots[0]!.dispose).toHaveBeenCalled()
+    expect(boots[0]!.resume).not.toHaveBeenCalled()
   })
 })

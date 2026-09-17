@@ -15,17 +15,22 @@ import type {
  *
  * - Scene 经 services.graphics 拿到的永远是本 router——Scene 不能自行
  *   创建/切换 frame policy（§27 Foundation ownership）；
- * - mode 在 mount 的 use() 时刻提交（与 Scene switch transaction 对齐，
- *   rapid GLOBAL→SITE→GLOBAL 最后选择获胜）；
- * - 非活跃 runtime 保持 suspend（无双 RAF/渲染），其 canvas 从 viewport
- *   移除，避免双 renderer 画布叠放；
- * - View binding 通过 `active` + `mode` 读取同一已提交 authority——
- *   不存在 Engine=GLOBAL 但 View=SITE 的可构造正常状态。
+ * - use() 是 **prepare → revalidate → commit 两阶段事务**（#31 复审）：
+ *   先 await 目标 access boot，再按最新 authority 校验——boot 期间
+ *   authority 易主时，晚到的 runtime 被 quarantine（suspend + canvas
+ *   移出 viewport），调用方 mount 以 stale 拒绝。rapid
+ *   GLOBAL→SITE→GLOBAL 最后选择获胜，且旧 continuation 不会误伤已重新
+ *   选中的同侧 runtime（按 access identity 比较，而非 mode 字符串）；
+ * - `mode` 只反映已完成 commit 的 authority（View binding 同源读取），
+ *   boot pending 期间 View 仍指向旧 runtime——不存在
+ *   "Engine=GLOBAL 但 View=SITE" 的可构造正常状态；
+ * - 非活跃 runtime 保持 suspend（无双 RAF/渲染），canvas 从 viewport
+ *   移除，避免双 renderer 画布叠放。
  */
 export type FrameMode = 'global' | 'site'
 
 export interface ModeRoutingGraphicsAccess extends GraphicsAccess {
-  /** 最近一次 use() 提交的 mode（初始值来自 resolveMode）。 */
+  /** 最近一次 commit 的 mode（初始值来自 resolveMode；boot pending 期间不变）。 */
   readonly mode: FrameMode
   /** 当前已提交 mode 对应的底层 access（View binding 与 graphics 同源）。 */
   readonly active: GraphicsAccess
@@ -40,6 +45,7 @@ export function createModeRoutingGraphicsAccess(args: {
 }): ModeRoutingGraphicsAccess {
   let committed = args.resolveMode()
   let routed: FrameMode | undefined
+  let disposed = false
 
   const accessFor = (mode: FrameMode): GraphicsAccess =>
     mode === 'global' ? args.global : args.site
@@ -53,8 +59,18 @@ export function createModeRoutingGraphicsAccess(args: {
   }
 
   /**
-   * mode 提交：与 Scene switch 对齐——use() 是唯一提交点。
-   * 幂等：同 mode 重复 use() 不重复 suspend/canvas 操作。
+   * #31 复审：晚到的 boot runtime 已在 createRuntime 中自启动（RAF +
+   * canvas append）。commit 时 authority 已易主则必须显式回收——底层
+   * GraphicsAccess.suspend 对 pending boot 是 no-op，这里是唯一的兜底。
+   */
+  function quarantine(access: GraphicsAccess): void {
+    access.suspend()
+    canvasOf(access)?.remove()
+  }
+
+  /**
+   * mode 提交（仅在 revalidate 通过后调用）：suspend 非活跃侧、迁移
+   * canvas、resume 目标侧。同 mode 幂等——不重复 suspend/resume。
    */
   function commitMode(mode: FrameMode): void {
     committed = mode
@@ -62,8 +78,7 @@ export function createModeRoutingGraphicsAccess(args: {
     routed = mode
     const inactive = accessFor(otherOf(mode))
     inactive.suspend()
-    const inactiveCanvas = canvasOf(inactive)
-    inactiveCanvas?.remove()
+    canvasOf(inactive)?.remove()
     const active = accessFor(mode)
     // 切回已 boot 的 runtime 必须恢复运行（不产生双 RAF——另一个已 suspend）
     active.resume()
@@ -82,8 +97,26 @@ export function createModeRoutingGraphicsAccess(args: {
       return accessFor(committed)
     },
     use(): Promise<GraphicsContext> {
-      commitMode(args.resolveMode())
-      return accessFor(committed).use()
+      if (disposed) {
+        return Promise.reject(new Error('[portal] graphics router disposed'))
+      }
+      const desired = args.resolveMode()
+      const target = accessFor(desired)
+      return target.use().then((ctx) => {
+        if (disposed) {
+          quarantine(target)
+          throw new Error('[portal] graphics router disposed during boot')
+        }
+        // revalidate：按 access identity 比较——GLOBAL→SITE→GLOBAL 时旧
+        // continuation 重新命中同侧 access，不得误判为 stale
+        const current = args.resolveMode()
+        if (accessFor(current) !== target) {
+          quarantine(target)
+          throw new Error('[portal] frame-mode route superseded before boot resolved')
+        }
+        commitMode(current)
+        return ctx
+      })
     },
     get state(): SceneEngineState {
       return accessFor(committed).state
@@ -106,6 +139,8 @@ export function createModeRoutingGraphicsAccess(args: {
       return accessFor(committed).getDiagnostics()
     },
     dispose() {
+      if (disposed) return
+      disposed = true
       args.global.dispose()
       args.site.dispose()
     }
