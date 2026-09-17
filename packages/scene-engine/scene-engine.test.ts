@@ -1049,3 +1049,83 @@ describe('EntitySystem.getPosition floating-origin 隔离（Issue #29）', () =>
     expect(v.z).toBeCloseTo(logical.z, 10)
   })
 })
+
+/** -------- Issue #30：SITE floating-origin 离散 rebase 状态机 */
+
+describe('SITE floating-origin rebase 状态机（Issue #30）', () => {
+  // 旧实现的等价算法（worldOffset -= p，判定用 logical pose）——
+  // 用于对照验证：本 describe 的断言在该算法下必须稳定失败。
+  const legacyFrame = (origin: FloatingOriginState, p: { x: number; y: number; z: number }) => {
+    const dist2 = p.x * p.x + p.y * p.y + p.z * p.z
+    if (dist2 > 20_000 * 20_000) {
+      origin.set(origin.offset.x - p.x, origin.offset.y - p.y, origin.offset.z - p.z)
+    }
+    return { rx: p.x + origin.offset.x, ry: p.y + origin.offset.y, rz: p.z + origin.offset.z }
+  }
+
+  it('首次越过 20km：恰好一次 rebase，camera render position 回到原点', () => {
+    const origin = new FloatingOriginState()
+    const p = { x: 25_000, y: 0, z: 0 }
+    // 阈值内不触发
+    expect(origin.updateSite({ x: 19_999, y: 0, z: 0 })).toBe(false)
+    expect(origin.offset.x).toBe(0)
+    // 越过阈值 → 一次 rebase → offset = -p → render camera ≈ 0
+    expect(origin.updateSite(p)).toBe(true)
+    expect(origin.offset.x).toBe(-25_000)
+    const render = { x: p.x + origin.offset.x, y: p.y + origin.offset.y, z: p.z + origin.offset.z }
+    expect(Math.hypot(render.x, render.y, render.z)).toBe(0)
+  })
+
+  it('logical pose 不变：连续 120 帧 offset 完全稳定（旧算法下会漂移 ~120×p）', () => {
+    const origin = new FloatingOriginState()
+    const p = { x: 25_000, y: 0, z: 0 }
+    origin.updateSite(p)
+    const frozen = origin.offset.clone()
+    for (let i = 0; i < 120; i++) {
+      expect(origin.updateSite(p)).toBe(false)
+      expect(origin.offset.x).toBe(frozen.x)
+      expect(origin.offset.y).toBe(frozen.y)
+      expect(origin.offset.z).toBe(frozen.z)
+    }
+    // 对照：旧算法同场景下 120 帧后 render camera 漂移约 119×p ≈ 2975km
+    const legacy = new FloatingOriginState()
+    let after = legacyFrame(legacy, p)
+    for (let i = 0; i < 119; i++) after = legacyFrame(legacy, p)
+    expect(Math.hypot(after.rx, after.ry, after.rz)).toBeGreaterThan(1_000_000)
+  })
+
+  it('rebase 后 camera 在 render origin 周围移动但未越过阈值：不发生新 rebase', () => {
+    const origin = new FloatingOriginState()
+    origin.updateSite({ x: 25_000, y: 0, z: 0 })
+    const frozen = origin.offset.clone()
+    // logical 移动 +8km——相对当前 render origin 仅 8km < 20km
+    expect(origin.updateSite({ x: 33_000, y: 0, z: 0 })).toBe(false)
+    expect(origin.offset.x).toBe(frozen.x)
+  })
+
+  it('相对当前 render origin 再次超过 20km：恰好一次新 rebase，当前 camera 成为新 origin', () => {
+    const origin = new FloatingOriginState()
+    origin.updateSite({ x: 25_000, y: 0, z: 0 })
+    // render 距离 = 21km > 20km → 一次 rebase
+    expect(origin.updateSite({ x: 46_000, y: 0, z: 0 })).toBe(true)
+    expect(origin.offset.x).toBe(-46_000)
+    // 之后稳定
+    expect(origin.updateSite({ x: 46_000, y: 0, z: 0 })).toBe(false)
+    expect(origin.offset.x).toBe(-46_000)
+  })
+
+  it('rebase 前后 Scene object 与 camera 的相对位置不变（无视觉跳变）', () => {
+    const origin = new FloatingOriginState()
+    const cam = { x: 25_000, y: 100, z: 0 }
+    const entity = { x: 25_500, y: 0, z: -30 } // 逻辑坐标
+    // offset 对 camera/entity 同加同减——相对量与 offset 无关
+    const rel = () =>
+      Math.hypot(entity.x - cam.x, entity.y - cam.y, entity.z - cam.z)
+    const before = rel()
+    origin.updateSite(cam)
+    const after = rel()
+    expect(after).toBeCloseTo(before, 6)
+    // entity render 坐标随 offset 平移，但 camera render 同步平移
+    expect(entity.x + origin.offset.x - (cam.x + origin.offset.x)).toBeCloseTo(entity.x - cam.x, 6)
+  })
+})

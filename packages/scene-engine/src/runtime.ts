@@ -17,13 +17,10 @@ import { EnvironmentSystem } from './environment'
 import { GlobalEarthSystem } from './earth'
 import { TilesSystem } from './tiles'
 import { EntitySystem } from './entities'
-import { FloatingOriginState } from './floatingOrigin'
+import { FLOAT_ORIGIN_THRESHOLD_M, FloatingOriginState } from './floatingOrigin'
 import { PickingSystem } from './picking'
 import { AdaptiveQuality, profileSettings } from './adaptive'
 import { ContextLossGuard } from './contextLoss'
-
-/** Floating-origin threshold in frame-local meters (§37.2). */
-const FLOAT_ORIGIN_THRESHOLD_M = 20_000
 
 /**
  * Engine runtime. Scene graph isolation (§19):
@@ -189,11 +186,10 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
       globalWorldRoot.position.copy(worldOffset)
       camera.position.set(p.x + worldOffset.x, p.y + worldOffset.y, p.z + worldOffset.z)
     } else {
-      const dist2 = p.x * p.x + p.y * p.y + p.z * p.z
-      if (dist2 > FLOAT_ORIGIN_THRESHOLD_M * FLOAT_ORIGIN_THRESHOLD_M) {
-        worldOffset.x -= p.x
-        worldOffset.y -= p.y
-        worldOffset.z -= p.z
+      // Issue #30：SITE 离散 rebase——判定基于 camera 相对当前 render origin
+      // 的位置（而非未重基准 logical pose）；只有真正 rebase 时才改写 root，
+      // 阈值外静止期间 offset 完全稳定，不再按帧累积 -p。
+      if (origin.updateSite(p, FLOAT_ORIGIN_THRESHOLD_M)) {
         baseWorldRoot.position.copy(worldOffset)
         sceneRoots.position.copy(worldOffset)
       }
