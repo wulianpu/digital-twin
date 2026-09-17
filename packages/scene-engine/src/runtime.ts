@@ -120,7 +120,7 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
         console.error(`[scene-engine] tileset 接入失败: ${url}`, error)
       })
   }
-  const entitySystem = new EntitySystem()
+  const entitySystem = new EntitySystem(options.stateBuffer, globalMode)
   const adaptive = new AdaptiveQuality(quality, maxQuality, (p) => {
     quality = p
     const s = profileSettings(p)

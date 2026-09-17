@@ -3,8 +3,8 @@ import { FrameLoop } from './src/frameLoop'
 import { AdaptiveQuality, profileSettings } from './src/adaptive'
 import { TilesSystem, type TilesRendererLike } from './src/tiles'
 import { AssetLeaseManager, disposeObject3D, type AssetSource } from './src/resources'
-import type * as THREE from 'three'
-import { createGraphicsAccess } from './src/public'
+import * as THREE from 'three'
+import { createGraphicsAccess, SpatialStateBuffer } from './src/public'
 import type { EngineRuntime } from './src/runtime'
 import { createSceneViewDriver, siteExtentMeters } from './src/driver'
 import { ContextLossGuard } from './src/contextLoss'
@@ -897,5 +897,57 @@ describe('AssetKind dispatch matrix（Issue #22）', () => {
     await expect(manager.acquire({ id: 'b1' })).rejects.toThrowError(/binary-metadata/)
     await expect(manager.acquire({ id: 'm1' })).rejects.toThrowError(/kinematic-model/)
     manager.dispose()
+  })
+})
+
+/** -------- Issue #23：late registration catch-up（Fast Path → EntitySystem） */
+
+import { EntitySystem } from './src/entities'
+
+describe('EntitySystem late registration catch-up（Issue #23）', () => {
+  it('upsert → drain（无 entity）→ register：最新 pose 立即应用，不依赖新数据', () => {
+    const buffer = new SpatialStateBuffer()
+    const entities = new EntitySystem(buffer)
+    const poseWrite = {
+      x: 10, y: 20, z: 30, qx: 0, qy: 0, qz: 0, qw: 1,
+      timeMs: 1000, frameId: 'f'
+    }
+    buffer.upsert('agv/A', poseWrite)
+
+    // drain 发生在 entity 注册之前（dirty 标志被消费）
+    buffer.drainDirty(() => {})
+
+    const mesh = {
+      position: { set: vi.fn() },
+      quaternion: { set: vi.fn() }
+    }
+    const d = entities.register({ namespace: 'agv', id: 'A' }, mesh as never)
+
+    // 注册时立即从 buffer catch-up latest pose
+    expect(mesh.position.set).toHaveBeenCalledWith(10, 20, 30)
+    void d
+  })
+
+  it('HISTORY 固定时间点：buffer 停留 t1，晚注册 entity 立即获得 t1 pose（无新数据）', () => {
+    const buffer = new SpatialStateBuffer()
+    const entities = new EntitySystem(buffer)
+    buffer.upsert('agv/B', { x: 1, y: 2, z: 3, qx: 0, qy: 0, qz: 0, qw: 1, timeMs: 5000, frameId: 'f' })
+    buffer.drainDirty(() => {})
+    // 无新 seek/delta——时间线停留在 t1
+
+    const mesh: THREE.Object3D = new THREE.Object3D()
+    entities.register({ namespace: 'agv', id: 'B' }, mesh)
+    // catch-up 后 mesh 位于 t1 pose
+    expect(mesh.position.x).toBe(1)
+    expect(mesh.position.y).toBe(2)
+    expect(mesh.position.z).toBe(3)
+  })
+
+  it('无 buffer pose 时 register 不改写 object transform', () => {
+    const entities = new EntitySystem(new SpatialStateBuffer())
+    const mesh = new THREE.Object3D()
+    mesh.position.set(7, 8, 9)
+    entities.register({ namespace: 'agv', id: 'C' }, mesh)
+    expect(mesh.position.x).toBe(7)
   })
 })

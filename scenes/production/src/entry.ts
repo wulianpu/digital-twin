@@ -84,6 +84,8 @@ const entry: SceneEntry = {
         graphicsHandle = handle
         // 重放 boot 间隙积累的 crane 状态（与旧行为一致）
         for (const [code, s] of craneStates) graphicsHandle.applyCraneState(code, s)
+        // Issue #23-A：显式 materialize 已有 AGV——不依赖未来新 envelope
+        for (const key of agvStates.keys()) graphicsHandle.ensureAgv(key)
         return handle
       },
       applyActiveView: (v) => {

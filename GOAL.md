@@ -668,6 +668,21 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
+  late registration catch-up 缺失）**：
+  ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
+  注入 options.stateBuffer）；register() 时若 buffer 已有该 key 的 latest
+  pose 立即应用（late registration catch-up——pose 可能在 drainDirty 之后、
+  注册之前写入），不依赖下一次网络数据；
+  ②production prepareGraphics 显式 materialize 已有 AGV——boot 后对
+  agvStates.keys() 逐一 ensureAgv（与 craneStates 重放同级），不再依赖未来
+  新 envelope；
+  ③无 buffer pose 时 register 不改写 transform；HISTORY 固定时间点进入 3D
+  无新 seek/delta 也能拿到正确 t1 pose；
+  ④测试 +3（upsert→drain→register catch-up / HISTORY 固定 t1 / 无 pose
+  不改写）。
+  验证：pnpm verify 全绿、311/311 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #24 修复（P1：WebSocketSource 按 DataQuery 对象身份计数）**：
   ①引入 canonical query key——contract + 稳定编码 scope + 排序去重后的 keys；
   协议语义等价的 query 合并为一个 transport 订阅（引用计数按语义 identity）；
@@ -753,6 +768,21 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④history-replay backward scrub 测试增加 Fast Path 同源断言
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
+  late registration catch-up 缺失）**：
+  ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
+  注入 options.stateBuffer）；register() 时若 buffer 已有该 key 的 latest
+  pose 立即应用（late registration catch-up——pose 可能在 drainDirty 之后、
+  注册之前写入），不依赖下一次网络数据；
+  ②production prepareGraphics 显式 materialize 已有 AGV——boot 后对
+  agvStates.keys() 逐一 ensureAgv（与 craneStates 重放同级），不再依赖未来
+  新 envelope；
+  ③无 buffer pose 时 register 不改写 transform；HISTORY 固定时间点进入 3D
+  无新 seek/delta 也能拿到正确 t1 pose；
+  ④测试 +3（upsert→drain→register catch-up / HISTORY 固定 t1 / 无 pose
+  不改写）。
+  验证：pnpm verify 全绿、311/311 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #24 修复（P1：WebSocketSource 按 DataQuery 对象身份计数）**：
   ①引入 canonical query key——contract + 稳定编码 scope + 排序去重后的 keys；
@@ -829,6 +859,21 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
+  late registration catch-up 缺失）**：
+  ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
+  注入 options.stateBuffer）；register() 时若 buffer 已有该 key 的 latest
+  pose 立即应用（late registration catch-up——pose 可能在 drainDirty 之后、
+  注册之前写入），不依赖下一次网络数据；
+  ②production prepareGraphics 显式 materialize 已有 AGV——boot 后对
+  agvStates.keys() 逐一 ensureAgv（与 craneStates 重放同级），不再依赖未来
+  新 envelope；
+  ③无 buffer pose 时 register 不改写 transform；HISTORY 固定时间点进入 3D
+  无新 seek/delta 也能拿到正确 t1 pose；
+  ④测试 +3（upsert→drain→register catch-up / HISTORY 固定 t1 / 无 pose
+  不改写）。
+  验证：pnpm verify 全绿、311/311 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-17 **Issue #24 修复（P1：WebSocketSource 按 DataQuery 对象身份计数）**：
   ①引入 canonical query key——contract + 稳定编码 scope + 排序去重后的 keys；
   协议语义等价的 query 合并为一个 transport 订阅（引用计数按语义 identity）；
@@ -914,6 +959,21 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④history-replay backward scrub 测试增加 Fast Path 同源断言
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #23 修复（P1：Production 3D lazy boot 未回放已有 AGV /
+  late registration catch-up 缺失）**：
+  ①EntitySystem 构造函数接收 SpatialStateBuffer + globalKmUnits（runtime
+  注入 options.stateBuffer）；register() 时若 buffer 已有该 key 的 latest
+  pose 立即应用（late registration catch-up——pose 可能在 drainDirty 之后、
+  注册之前写入），不依赖下一次网络数据；
+  ②production prepareGraphics 显式 materialize 已有 AGV——boot 后对
+  agvStates.keys() 逐一 ensureAgv（与 craneStates 重放同级），不再依赖未来
+  新 envelope；
+  ③无 buffer pose 时 register 不改写 transform；HISTORY 固定时间点进入 3D
+  无新 seek/delta 也能拿到正确 t1 pose；
+  ④测试 +3（upsert→drain→register catch-up / HISTORY 固定 t1 / 无 pose
+  不改写）。
+  验证：pnpm verify 全绿、311/311 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-17 **Issue #24 修复（P1：WebSocketSource 按 DataQuery 对象身份计数）**：
   ①引入 canonical query key——contract + 稳定编码 scope + 排序去重后的 keys；
