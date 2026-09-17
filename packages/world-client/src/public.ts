@@ -9,7 +9,6 @@ export type {
   DataEnvelope,
   DataQuery,
   DataSubscription,
-  SubscribeOptions,
   Timestamp,
   EnvelopeHandler
 } from './types'

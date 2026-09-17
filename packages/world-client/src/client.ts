@@ -5,14 +5,17 @@ import type {
   DataQuery,
   DataSubscription,
   EnvelopeHandler,
-  SubscribeOptions,
   WorldMode
 } from './types'
 
 export interface WorldClientOptions {
   /** One source per world mode; all three may be provided. */
   sources: readonly DataSource[]
-  /** Default staleness window for subscriptions without an explicit option. */
+  /**
+   * Issue #28：cache-global freshness policy——唯一的 staleness authority。
+   * 所有订阅共享同一阈值；gateway 显式 quality（bad/stale/…）不被本地
+   * TTL 改写；good→stale 转变由 sweepStale 统一推进并通知订阅者。
+   */
   defaultStaleAfterMs?: number
   /** Sweeper interval for staleness checks; 0 disables. */
   sweepIntervalMs?: number
@@ -44,11 +47,7 @@ export interface WorldClientOptions {
 
 export interface DataApi {
   query(query: DataQuery): Promise<readonly DataEnvelope[]>
-  subscribe(
-    query: DataQuery,
-    cb: EnvelopeHandler,
-    options?: SubscribeOptions
-  ): DataSubscription
+  subscribe(query: DataQuery, cb: EnvelopeHandler): DataSubscription
   /** Cached latest envelope for a contract/key, if any. */
   peek(contract: DataContractIdString, key: string): DataEnvelope | undefined
   /** Current world mode routing. */
@@ -76,7 +75,6 @@ type DataContractIdString = string
 interface ActiveSubscription {
   query: DataQuery
   handlers: Set<EnvelopeHandler>
-  staleAfterMs: number
   sourceDisposables: Map<WorldMode, Disposable>
   /**
    * 按 {mode → key → revision} 分区的已投递游标（Issue #11）：
@@ -238,11 +236,7 @@ export class WorldClient implements DataApi {
     return envelopes
   }
 
-  subscribe(
-    query: DataQuery,
-    cb: EnvelopeHandler,
-    options?: SubscribeOptions
-  ): DataSubscription {
+  subscribe(query: DataQuery, cb: EnvelopeHandler): DataSubscription {
     // Issue #26-A：terminal guard——dispose 后不创建 ActiveSubscription、
     // 不调用任何 DataSource.subscribe
     if (this.disposed) {
@@ -251,7 +245,6 @@ export class WorldClient implements DataApi {
     const sub: ActiveSubscription = {
       query,
       handlers: new Set([cb]),
-      staleAfterMs: options?.staleAfterMs ?? this.options.defaultStaleAfterMs ?? Number.POSITIVE_INFINITY,
       sourceDisposables: new Map(),
       delivered: new Map()
     }
@@ -325,14 +318,12 @@ export class WorldClient implements DataApi {
     const source = this.sources.get(mode)
     if (!source) return
     const forward: EnvelopeHandler = (e) => {
-      console.log('[TRACE] forward entry:', e.key, 'mode:', this._mode, 'sub-mode:', mode, 'gen:', this.currentTimelineGen(mode), timeline)
       // #11-A/r2：setMode 会 detach 旧 source，但已入队的转发回调仍可能晚到；
       // 同 mode 的旧 timeline epoch 事件（seek 前入队）同样丢弃——
       // 否则旧 epoch 高 revision 会抢占游标、反过来吞掉新 epoch 低 revision。
       if (this.disposed || this._mode !== mode) return
       if (this.currentTimelineGen(mode) !== timeline) return
       const effective = this.ingest(e, sub)
-      console.log('[TRACE] forward effective:', effective !== undefined, 'key:', e.key)
       if (effective) this.deliver(sub, effective)
     }
     sub.sourceDisposables.set(mode, source.subscribe(sub.query, forward))
@@ -429,10 +420,13 @@ export class WorldClient implements DataApi {
       this.cache.get(mode)?.get(e.contract)?.delete(e.key)
       return e
     }
+    // Issue #28：cache-global staleness policy——
+    // defaultStaleAfterMs（而非 per-subscription 阈值）决定投递时的
+    // freshness；自然老化由 sweepStale 统一推进并通知订阅者。
     const effective =
-      sub.staleAfterMs !== Number.POSITIVE_INFINITY &&
-      e.sourceTime + sub.staleAfterMs < this.now() &&
-      e.quality === 'good'
+      this.options.defaultStaleAfterMs !== undefined &&
+      e.quality === 'good' &&
+      e.sourceTime + this.options.defaultStaleAfterMs < this.now()
         ? { ...e, quality: 'stale' as const }
         : e
     this.putCache(effective)
@@ -473,7 +467,15 @@ export class WorldClient implements DataApi {
     for (const byContract of this.cache.get(this._mode)?.values() ?? []) {
       for (const [key, e] of byContract) {
         if (e.quality === 'good' && now - e.sourceTime > window) {
-          byContract.set(key, { ...e, quality: 'stale' })
+          const stale = { ...e, quality: 'stale' as const }
+          byContract.set(key, stale)
+          // Issue #28：good→stale 转变对活跃订阅可观察（每转变只通知一次，
+          // 不会在后续 sweep 重复通知造成事件风暴）
+          for (const sub of this.active) {
+            if (sub.query.contract !== e.contract) continue
+            if (sub.query.keys && !sub.query.keys.includes(e.key)) continue
+            this.deliver(sub, stale)
+          }
         }
       }
     }

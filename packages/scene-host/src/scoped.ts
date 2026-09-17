@@ -19,9 +19,9 @@ import type { MountScope } from './scope'
 export function scopedDataApi(inner: DataApi, scope: MountScope): DataApi {
   return {
     query: (query) => inner.query(query),
-    subscribe: (query, cb, options) => {
+    subscribe: (query, cb) => {
       scope.assertCanCreate('data.subscribe')
-      const sub = inner.subscribe(query, cb, options)
+      const sub = inner.subscribe(query, cb)
       // 创建成功时立即 track——Host 兜底 dispose 不依赖 Scene 手工清理
       scope.track(sub)
       return sub

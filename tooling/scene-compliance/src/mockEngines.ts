@@ -10,7 +10,6 @@ import type {
   MapAccess,
   MapContext,
   PickEvent,
-  SubscribeOptions,
   WaterState
 } from '@twin/sdk'
 
@@ -340,7 +339,7 @@ export class MockDataApi implements DataApi {
     return this.envelopes
   }
 
-  subscribe(_query: DataQuery, _cb: EnvelopeHandler, _options?: SubscribeOptions) {
+  subscribe(_query: DataQuery, _cb: EnvelopeHandler) {
     this.counters.dataSubscriptions++
     let disposed = false
     const subscription = {

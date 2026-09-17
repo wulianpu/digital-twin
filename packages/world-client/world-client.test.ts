@@ -71,14 +71,17 @@ describe('WorldClient', () => {
     client.dispose()
   })
 
-  it('marks old snapshots stale on delivery', () => {
+  it('marks old snapshots stale on delivery（cache-global policy）', () => {
     const live = createScriptedSource({ kind: 'live' })
-    const client = new WorldClient({ sources: [live], sweepIntervalMs: 0 })
+    const client = new WorldClient({
+      sources: [live],
+      sweepIntervalMs: 0,
+      defaultStaleAfterMs: 1000
+    })
     const seen: string[] = []
     client.subscribe(
       { contract: 'twin.test@1' },
-      (e) => seen.push(e.quality),
-      { staleAfterMs: 1000 }
+      (e) => seen.push(e.quality)
     )
     live.emit([envelope({ sourceTime: Date.now() - 60_000 })])
     expect(seen).toEqual(['stale'])
@@ -135,13 +138,13 @@ describe('WorldClient', () => {
     const client = new WorldClient({
       sources: [live],
       sweepIntervalMs: 0,
-      now: () => fakeNow
+      now: () => fakeNow,
+      defaultStaleAfterMs: 1000
     })
     const seen: string[] = []
     client.subscribe(
       { contract: 'twin.test@1' },
-      (e) => seen.push(e.quality),
-      { staleAfterMs: 1000 }
+      (e) => seen.push(e.quality)
     )
     // 数据时间 = 虚拟当前 → good
     live.emit([envelope({ sourceTime: fakeNow })])
@@ -156,8 +159,12 @@ describe('WorldClient', () => {
 
   it('countStale 统计降级信封（I3-3 降级可见）', () => {
     const live = createScriptedSource({ kind: 'live' })
-    const client = new WorldClient({ sources: [live], sweepIntervalMs: 0 })
-    client.subscribe({ contract: 'twin.test@1' }, () => {}, { staleAfterMs: 1000 })
+    const client = new WorldClient({
+      sources: [live],
+      sweepIntervalMs: 0,
+      defaultStaleAfterMs: 1000
+    })
+    client.subscribe({ contract: 'twin.test@1' }, () => {})
     live.emit([
       envelope({ key: 'e/1', sourceTime: Date.now() }),
       envelope({ key: 'e/2', sourceTime: Date.now() - 60_000 })
@@ -1218,6 +1225,117 @@ describe('snapshot reconciliation（Issue #27）', () => {
     )
     expect(client.peek('twin.test@1', 'A')).toBeDefined()
     expect(client.peek('twin.test@1', 'B')).toBeDefined()
+    client.dispose()
+  })
+})
+
+/** -------- Issue #28：staleness cache-global policy 与 transition 通知 */
+
+describe('staleness cache-global policy（Issue #28）', () => {
+  it('good→stale transition 对活跃订阅可观察，且不重复通知', () => {
+    let fakeNow = 10_000
+    const live = createScriptedSource({ kind: 'live' })
+    const client = new WorldClient({
+      sources: [live],
+      sweepIntervalMs: 0,
+      now: () => fakeNow,
+      defaultStaleAfterMs: 1000
+    })
+    const seen: Array<{ key: string; quality: string }> = []
+    client.subscribe({ contract: 'twin.test@1' }, (e) =>
+      seen.push({ key: e.key, quality: e.quality })
+    )
+    const t0 = fakeNow
+    live.emit([{ ...envelope({ key: 'e/1', payload: {} }), sourceTime: t0 }])
+    expect(seen).toEqual([{ key: 'e/1', quality: 'good' }])
+
+    // 世界时钟推进超过阈值 → sweep 标记 stale 并通知
+    fakeNow += 5_000
+    client['sweepStale']()
+    expect(seen).toEqual([
+      { key: 'e/1', quality: 'good' },
+      { key: 'e/1', quality: 'stale' }
+    ])
+    // 再次 sweep：已是 stale，不重复通知
+    client['sweepStale']()
+    expect(seen).toEqual([
+      { key: 'e/1', quality: 'good' },
+      { key: 'e/1', quality: 'stale' }
+    ])
+    client.dispose()
+  })
+
+  it('fresh 更新到达后 stale → good 恢复，countStale 回落', () => {
+    let fakeNow = 10_000
+    const live = createScriptedSource({ kind: 'live' })
+    const client = new WorldClient({
+      sources: [live],
+      sweepIntervalMs: 0,
+      now: () => fakeNow,
+      defaultStaleAfterMs: 1000
+    })
+    const cb = vi.fn()
+    client.subscribe({ contract: 'twin.test@1' }, cb)
+    live.emit([{ ...envelope({ key: 'e/1', payload: {} }), sourceTime: fakeNow }])
+    fakeNow += 5_000
+    client['sweepStale']()
+    expect(client.countStale()).toBe(1)
+    // 新鲜数据到达 → good 恢复
+    live.emit([envelope({ key: 'e/1', payload: {} })])
+    expect(client.countStale()).toBe(0)
+    client.dispose()
+  })
+
+  it('订阅注册顺序不影响 peek().quality（cache-global policy）', async () => {
+    // 同一数据、同一 policy、不同注册路径 → cache quality 一致
+    const mk = () => {
+      const live = createScriptedSource({ kind: 'live' })
+      const client = new WorldClient({
+        sources: [live],
+        sweepIntervalMs: 0,
+        defaultStaleAfterMs: 1000
+      })
+      return { live, client }
+    }
+    const oldSourceTime = Date.now() - 60_000
+
+    // 路径 1：先订阅后 emit（forward 同步入 cache）
+    const a = mk()
+    a.client.subscribe({ contract: 'twin.test@1' }, () => {})
+    a.live.emit([envelope({ sourceTime: oldSourceTime })])
+    const qualityA = a.client.peek('twin.test@1', 'e/1')?.quality
+    a.client.dispose()
+
+    // 路径 2：先 emit 后订阅（数据经 snapshot 补发；replaySnapshot
+    // 是异步的，需排空 microtask 后 cache 才可见）
+    const b = mk()
+    b.live.emit([envelope({ sourceTime: oldSourceTime })])
+    b.client.subscribe({ contract: 'twin.test@1' }, () => {})
+    await Promise.resolve()
+    const qualityB = b.client.peek('twin.test@1', 'e/1')?.quality
+    b.client.dispose()
+
+    expect(qualityA).toBe('stale')
+    expect(qualityA).toBe(qualityB)
+  })
+
+  it('Gateway 质量不被本地 freshness policy 改回 good', () => {
+    let fakeNow = 10_000
+    const live = createScriptedSource({ kind: 'live' })
+    const client = new WorldClient({
+      sources: [live],
+      sweepIntervalMs: 0,
+      now: () => fakeNow
+    })
+    const got: string[] = []
+    client.subscribe({ contract: 'twin.test@1' }, (e) => got.push(e.quality))
+    // Gateway 侧声明 degraded
+    live.emit([
+      { contract: 'twin.test@1', key: 'e/1', sourceTime: fakeNow, ingestTime: fakeNow, quality: 'bad', payload: {} }
+    ])
+    fakeNow += 10_000
+    client['sweepStale']()
+    expect(got).toEqual(['bad']) // 不被本地 policy 改写
     client.dispose()
   })
 })

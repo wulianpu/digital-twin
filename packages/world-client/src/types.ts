@@ -42,9 +42,4 @@ export interface DataSubscription extends Disposable {
   readonly query: DataQuery
 }
 
-export interface SubscribeOptions {
-  /** Mark cached values stale when sourceTime falls behind by this much. */
-  staleAfterMs?: number
-}
-
 export type EnvelopeHandler<T = unknown> = (envelope: DataEnvelope<T>) => void

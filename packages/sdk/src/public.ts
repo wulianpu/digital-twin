@@ -82,7 +82,6 @@ export type {
   DataContractId,
   DataQuality,
   DataSubscription,
-  SubscribeOptions,
   EnvelopeHandler
 } from '@twin/world-client'
 export type {

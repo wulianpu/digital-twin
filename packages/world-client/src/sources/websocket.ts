@@ -173,7 +173,6 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       } catch {
         return // Malformed frame: drop, keep the connection.
       }
-      console.log('[TRACE onmessage] parsed type:', (parsed as { type?: string }).type, 'keys:', Object.keys((parsed ?? {}) as object))
       if (parsed && (parsed as { type?: string }).type === 'pong') {
         lastPongAt = Date.now()
         return
