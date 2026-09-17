@@ -56,7 +56,13 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
   const backoffMs = options.backoffMs ?? 500
   const maxBackoffMs = options.maxBackoffMs ?? 15_000
   const heartbeatMs = options.heartbeatMs ?? 30_000
-  const subscriptions = new Map<DataQuery, Set<(e: DataEnvelope) => void>>()
+  // Issue #24：query 语义 identity（canonical key）——
+  // 协议语义等价的 query 合并为一个 transport 订阅；
+  // 引用计数只在 0→1（发 subscribe）与 1→0（发 unsubscribe）时跨网络。
+  const subscriptions = new Map<
+    string,
+    { query: DataQuery; handlers: Set<(e: DataEnvelope) => void> }
+  >()
   const stateListeners = new Set<(state: GatewayConnectionState) => void>()
   const errorListeners = new Set<(frame: GatewayErrorFrame) => void>()
   let socket: WebSocketLike | undefined
@@ -75,6 +81,15 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       }
       return new (WS as new (url: string) => WebSocketLike)(url)
     })
+
+  function queryKey(query: DataQuery): string {
+    // contract + 稳定编码的 scope + 排序去重后的 keys（§5：协议语义等价）
+    const keys = query.keys ? [...query.keys].sort() : undefined
+    const scope = query.scope
+      ? JSON.stringify(query.scope, Object.keys(query.scope).sort())
+      : ''
+    return `${query.contract}|${scope}|${keys ? JSON.stringify(keys) : ''}`
+  }
 
   function setState(next: GatewayConnectionState): void {
     if (state === next) return
@@ -117,7 +132,7 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
     s.onopen = () => {
       attempt = 0
       setState('open')
-      for (const query of subscriptions.keys()) {
+      for (const { query } of subscriptions.values()) {
         s.send(JSON.stringify({ type: 'subscribe', query }))
       }
       startHeartbeat(s)
@@ -143,10 +158,11 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       // 逐订阅/逐 handler 隔离：单个 subscriber throw 不击穿 emitter，
       // 也不阻断同 batch 后续 envelope（DataSource 独立使用时契约仍安全）。
       for (const e of envelopes as DataEnvelope[]) {
-        for (const [query, handlers] of subscriptions) {
+        for (const { query, handlers } of subscriptions.values()) {
           if (e.contract !== query.contract) continue
           if (query.keys && !query.keys.includes(e.key)) continue
           for (const cb of [...handlers]) {
+            console.log('[TRACE ws] dispatch to handler, contract match:', e.contract === query.contract)
             try {
               cb(e)
             } catch (error) {
@@ -201,25 +217,28 @@ export function createWebSocketSource(options: WebSocketSourceOptions): WebSocke
       return []
     },
     subscribe(query, cb) {
-      let handlers = subscriptions.get(query)
-      const isNew = handlers === undefined
-      if (!handlers) {
-        handlers = new Set()
-        subscriptions.set(query, handlers)
+      // Issue #24：query 语义 identity——协议语义等价的 query 合并；
+      // dispose 只在最后一个语义等价 consumer 释放时发送 unsubscribe
+      const key = queryKey(query)
+      let entry = subscriptions.get(key)
+      const isNew = entry === undefined
+      if (!entry) {
+        entry = { query, handlers: new Set() }
+        subscriptions.set(key, entry)
       }
-      handlers.add(cb)
+      entry.handlers.add(cb)
       if (isNew && socket && state === 'open') {
         socket.send(JSON.stringify({ type: 'subscribe', query }))
       }
+
       return {
         dispose: () => {
-          const set = subscriptions.get(query)
-          if (!set) return
-          set.delete(cb)
-          if (set.size === 0) {
-            subscriptions.delete(query)
-            socket?.send(JSON.stringify({ type: 'unsubscribe', query }))
-          }
+          const current = subscriptions.get(key)
+          if (!current) return
+          current.handlers.delete(cb)
+          if (current.handlers.size > 0) return // 仍有活跃 consumer
+          subscriptions.delete(key)
+          socket?.send(JSON.stringify({ type: 'unsubscribe', query: current.query }))
         }
       }
     },

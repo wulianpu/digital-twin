@@ -668,6 +668,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #24 修复（P1：WebSocketSource 按 DataQuery 对象身份计数）**：
+  ①引入 canonical query key——contract + 稳定编码 scope + 排序去重后的 keys；
+  协议语义等价的 query 合并为一个 transport 订阅（引用计数按语义 identity）；
+  ②subscribe/unsubscribe 仅在 0→1 与 1→0 时跨网络发送——中间 consumer 增减
+  不产生 transport 帧，等价订阅提前 unsubscribe 不再中断仍活跃消费者；
+  ③onopen 重连重发与 onmessage dispatch 适配新 map 结构；
+  ④确定性测试 +3（等价合并 / 最后一消费者 unsubscribe / keys 排序语义）。
+  验证：pnpm verify 全绿、307/307 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
   逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
@@ -744,6 +753,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④history-replay backward scrub 测试增加 Fast Path 同源断言
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #24 修复（P1：WebSocketSource 按 DataQuery 对象身份计数）**：
+  ①引入 canonical query key——contract + 稳定编码 scope + 排序去重后的 keys；
+  协议语义等价的 query 合并为一个 transport 订阅（引用计数按语义 identity）；
+  ②subscribe/unsubscribe 仅在 0→1 与 1→0 时跨网络发送——中间 consumer 增减
+  不产生 transport 帧，等价订阅提前 unsubscribe 不再中断仍活跃消费者；
+  ③onopen 重连重发与 onmessage dispatch 适配新 map 结构；
+  ④确定性测试 +3（等价合并 / 最后一消费者 unsubscribe / keys 排序语义）。
+  验证：pnpm verify 全绿、307/307 单测、compliance 44/44、e2e 10/10。
 
 - 2026-09-16 **持续迭代：compliance 资源 baseline 全量统一 + assetLeases 计数**：
   ①MockAssetApi 增加 lease 计数同步（acquire/release 驱动 counters.assetLeases）；
@@ -811,6 +829,15 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #24 修复（P1：WebSocketSource 按 DataQuery 对象身份计数）**：
+  ①引入 canonical query key——contract + 稳定编码 scope + 排序去重后的 keys；
+  协议语义等价的 query 合并为一个 transport 订阅（引用计数按语义 identity）；
+  ②subscribe/unsubscribe 仅在 0→1 与 1→0 时跨网络发送——中间 consumer 增减
+  不产生 transport 帧，等价订阅提前 unsubscribe 不再中断仍活跃消费者；
+  ③onopen 重连重发与 onmessage dispatch 适配新 map 结构；
+  ④确定性测试 +3（等价合并 / 最后一消费者 unsubscribe / keys 排序语义）。
+  验证：pnpm verify 全绿、307/307 单测、compliance 44/44、e2e 10/10。
+
 - 2026-09-16 **Issue #19 修复（P1：WorldClient/DataSource subscriber fault boundary）**：
   ①WorldClient 新增 `deliver()` trust boundary——Scene-facing data handler
   逐 handler try/catch 隔离：单个 handler throw 只失败它自己，不截断同一
@@ -887,3 +914,12 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④history-replay backward scrub 测试增加 Fast Path 同源断言
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #24 修复（P1：WebSocketSource 按 DataQuery 对象身份计数）**：
+  ①引入 canonical query key——contract + 稳定编码 scope + 排序去重后的 keys；
+  协议语义等价的 query 合并为一个 transport 订阅（引用计数按语义 identity）；
+  ②subscribe/unsubscribe 仅在 0→1 与 1→0 时跨网络发送——中间 consumer 增减
+  不产生 transport 帧，等价订阅提前 unsubscribe 不再中断仍活跃消费者；
+  ③onopen 重连重发与 onmessage dispatch 适配新 map 结构；
+  ④确定性测试 +3（等价合并 / 最后一消费者 unsubscribe / keys 排序语义）。
+  验证：pnpm verify 全绿、307/307 单测、compliance 44/44、e2e 10/10。

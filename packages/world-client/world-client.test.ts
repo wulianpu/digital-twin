@@ -767,3 +767,71 @@ describe('SpatialStateBuffer timeline epoch（Issue #21-r2）', () => {
     expect(sample.timeMs).toBe(3000)
   })
 })
+
+/** -------- Issue #24：WebSocketSource query 语义 identity */
+
+describe('WebSocketSource query semantic identity（Issue #24）', () => {
+  function makeTrackedSocket() {
+    const sent: string[] = []
+    const socket = {
+      send: (d: string) => {
+        sent.push(d)
+      },
+      close: () => {},
+      onopen: null as (() => void) | null,
+      onclose: null,
+      onmessage: null,
+      onerror: null
+    }
+    const ws = createWebSocketSource({
+      url: 'ws://gateway.test',
+      socketFactory: () => socket as never,
+      heartbeatMs: 0
+    })
+    socket.onopen?.()
+    const frames = () =>
+      sent.map((f) => JSON.parse(f) as { type: string; query?: { contract: string } })
+    return { ws, frames }
+  }
+
+  it('结构等价的 query 合并为一个 transport 订阅（一次 subscribe）', () => {
+    const { ws, frames } = makeTrackedSocket()
+    const q1 = { contract: 'twin.agv.state@1' }
+    const q2 = { contract: 'twin.agv.state@1' } // 不同对象，语义等价
+
+    const s1 = ws.subscribe(q1, () => {})
+    ws.subscribe(q2, () => {})
+    s1.dispose()
+
+    const subs = frames().filter((f) => f.type === 'subscribe')
+    const unsubs = frames().filter((f) => f.type === 'unsubscribe')
+    // 语义等价 → 只发一次 subscribe；提前 unsubscribe 不触发（仍有活跃 consumer）
+    expect(subs).toHaveLength(1)
+    expect(unsubs).toHaveLength(0)
+    ws.dispose()
+  })
+
+  it('最后一个语义等价 consumer 释放：恰好一次 unsubscribe', () => {
+    const { ws, frames } = makeTrackedSocket()
+    const q1 = { contract: 'twin.agv.state@1' }
+    const q2 = { contract: 'twin.agv.state@1' }
+    const s1 = ws.subscribe(q1, () => {})
+    const s2 = ws.subscribe(q2, () => {})
+    s1.dispose()
+    s2.dispose()
+
+    const unsubs = frames().filter((f) => f.type === 'unsubscribe')
+    expect(unsubs).toHaveLength(1) // 最后一个 consumer 释放才发送
+    ws.dispose()
+  })
+
+  it('keys 参与语义 identity：不同 keys 集合是不同订阅', () => {
+    const { ws, frames } = makeTrackedSocket()
+    ws.subscribe({ contract: 't.c@1', keys: ['b', 'a'] }, () => {})
+    ws.subscribe({ contract: 't.c@1', keys: ['a', 'b'] }, () => {}) // 排序后等价 → 合并
+    ws.subscribe({ contract: 't.c@1', keys: ['a'] }, () => {}) // 不同 keys → 独立订阅
+    const subs = frames().filter((f) => f.type === 'subscribe')
+    expect(subs).toHaveLength(2)
+    ws.dispose()
+  })
+})
