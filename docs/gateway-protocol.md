@@ -51,6 +51,24 @@
 | 帧 | 说明 |
 |---|---|
 | `DataEnvelope` / `DataEnvelope[]` | 数据（增量或快照） |
+| `{ type: 'data', subscriptionId, envelopes }` | attributed 数据帧：按 correlation id 归属订阅（Issue #24-r3） |
+
+#### 实体删除语义（Issue #27）
+
+`DataEnvelope` 可携带 `op: 'delete'` 表示 tombstone（实体已离场）：
+
+- tombstone 参与同 key revision 排序——删除后晚到的更低 revision upsert 不得复活实体；
+- `stale`（质量降级）与 `delete`（实体不存在）是不同语义，不可混用；
+- 客户端收到 tombstone 后撤销 cache 中该 key 并向订阅者投递删除事件；
+- 客户端可通过 `reconcileSnapshot(query, envelopes)` 做 authoritative snapshot
+  replacement——完成后撤销快照中已不存在的 key（keys 过滤型 query 跳过）。
+
+示例：
+
+```json
+{ "type": "delete", "op": "delete", "contract": "twin.agv.state@1", "key": "agv/AGV-01",
+  "sourceTime": 1789000000000, "ingestTime": 1789000000123, "revision": 48112 }
+```
 | `{ "type": "pong", "ts": … }` | 心跳应答 |
 | `{ "type": "error", "code": "…", "message": "…", "query": … }` | 错误帧；连接保持，客户端经 `onError` 上报 |
 
