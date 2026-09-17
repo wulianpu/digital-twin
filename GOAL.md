@@ -668,6 +668,11 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #21-r3 修复（P1：grow() 未扩容 slotEpoch）**：`grow()` 同步扩容
+  slotEpoch 并复制旧值——扩容后的实体不再永久失去同 epoch 防乱序保护；
+  回归测试：容量 16 → 20 实体扩容后同 epoch 乱序仍拒绝、beginEpoch 语义保持。
+  验证：pnpm verify 全绿、301/301 world-client 内含于全量。
+
 - 2026-09-17 **Issue #16 二次复审修复（P1：Standalone Composition Root 绕过 teardown contract）**：
   `apps/standalone/shared/bootstrap.ts` disposer 改为 async 并按 ownership
   反向顺序终止——先 `await host.shutdown()`（terminal：Scene unmount /
@@ -783,6 +788,11 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④history-replay backward scrub 测试增加 Fast Path 同源断言
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #21-r3 修复（P1：grow() 未扩容 slotEpoch）**：`grow()` 同步扩容
+  slotEpoch 并复制旧值——扩容后的实体不再永久失去同 epoch 防乱序保护；
+  回归测试：容量 16 → 20 实体扩容后同 epoch 乱序仍拒绝、beginEpoch 语义保持。
+  验证：pnpm verify 全绿、301/301 world-client 内含于全量。
 
 - 2026-09-17 **Issue #16 二次复审修复（P1：Standalone Composition Root 绕过 teardown contract）**：
   `apps/standalone/shared/bootstrap.ts` disposer 改为 async 并按 ownership
@@ -889,6 +899,11 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
 
+- 2026-09-17 **Issue #21-r3 修复（P1：grow() 未扩容 slotEpoch）**：`grow()` 同步扩容
+  slotEpoch 并复制旧值——扩容后的实体不再永久失去同 epoch 防乱序保护；
+  回归测试：容量 16 → 20 实体扩容后同 epoch 乱序仍拒绝、beginEpoch 语义保持。
+  验证：pnpm verify 全绿、301/301 world-client 内含于全量。
+
 - 2026-09-17 **Issue #16 二次复审修复（P1：Standalone Composition Root 绕过 teardown contract）**：
   `apps/standalone/shared/bootstrap.ts` disposer 改为 async 并按 ownership
   反向顺序终止——先 `await host.shutdown()`（terminal：Scene unmount /
@@ -1004,6 +1019,11 @@ Portal 浏览器实测（场景切换 / Live↔History / 实时数据流）。
   ④history-replay backward scrub 测试增加 Fast Path 同源断言
   （readLatest timeMs ≤ scrub 目标时间）。
   验证：pnpm verify 全绿、304/304 单测、compliance 44/44、e2e 10/10。
+
+- 2026-09-17 **Issue #21-r3 修复（P1：grow() 未扩容 slotEpoch）**：`grow()` 同步扩容
+  slotEpoch 并复制旧值——扩容后的实体不再永久失去同 epoch 防乱序保护；
+  回归测试：容量 16 → 20 实体扩容后同 epoch 乱序仍拒绝、beginEpoch 语义保持。
+  验证：pnpm verify 全绿、301/301 world-client 内含于全量。
 
 - 2026-09-17 **Issue #16 二次复审修复（P1：Standalone Composition Root 绕过 teardown contract）**：
   `apps/standalone/shared/bootstrap.ts` disposer 改为 async 并按 ownership

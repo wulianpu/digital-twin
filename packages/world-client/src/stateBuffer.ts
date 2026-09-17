@@ -209,15 +209,20 @@ export class SpatialStateBuffer {
     const current = new Float64Array(capacity * STRIDE)
     const previous = new Float64Array(capacity * STRIDE)
     const dirty = new Uint8Array(capacity)
+    // Issue #21-r3：slotEpoch 必须同步扩容——否则扩容后的实体永久失去
+    // 同 epoch 防乱序保护（slotEpoch[slot] 读越界返回 undefined）。
+    const slotEpoch = new Uint32Array(capacity)
     const frameIds = new Array<string>(capacity).fill('')
     current.set(this.current)
     previous.set(this.previous)
     dirty.set(this.dirty)
+    slotEpoch.set(this.slotEpoch)
     for (let i = 0; i < this._count; i++) frameIds[i] = this.frameIds[i]
     this.capacity = capacity
     this.current = current
     this.previous = previous
     this.dirty = dirty
+    this.slotEpoch = slotEpoch
     this.frameIds = frameIds
   }
 }

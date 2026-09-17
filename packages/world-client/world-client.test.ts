@@ -897,3 +897,24 @@ describe('query scope canonicalization（Issue #24-r2）', () => {
     ws.dispose()
   })
 })
+
+it('grow 扩容后同 epoch 防乱序保持（#21-r3 slotEpoch 扩容回归）', () => {
+  const buffer = new SpatialStateBuffer(16) // 最小容量，触发多次 grow
+  const p = (t: number) => ({
+    x: t, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, timeMs: t, frameId: 'f'
+  })
+  for (let i = 0; i < 20; i++) {
+    buffer.upsert(`agv/${i}`, p(2000 + i))
+  }
+  expect(buffer.count).toBe(20)
+  // 扩容后同 epoch 乱序仍被拒绝
+  buffer.upsert('agv/0', p(1000))
+  const sample = createPoseSample()
+  buffer.readLatest('agv/0', sample)
+  expect(sample.timeMs).toBe(2000)
+  // beginEpoch 后新 epoch 低时间戳接受
+  buffer.beginEpoch()
+  buffer.upsert('agv/0', p(500))
+  buffer.readLatest('agv/0', sample)
+  expect(sample.timeMs).toBe(500)
+})
