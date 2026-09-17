@@ -59,6 +59,20 @@ export function createModeRoutingGraphicsAccess(args: {
   }
 
   /**
+   * #31-r3： GraphicsAccess.use() 成功创建的 mount-owned root（真实
+   * createMountRoot 已 attach 进场景层级）只有两种合法归宿——随成功
+   * context transfer 给 MountScope，或在 transfer 前的失败路径由当前
+   * owner（router）立即 detach。不存在"创建后 reject 且无人拥有"的状态。
+   */
+  function discardContext(ctx: GraphicsContext): void {
+    try {
+      ctx.root.removeFromParent?.()
+    } catch {
+      // runtime 已 teardown 时忽略
+    }
+  }
+
+  /**
    * #31 复审：晚到的 boot runtime 已在 createRuntime 中自启动（RAF +
    * canvas append）。commit 时 authority 已易主则必须显式回收——底层
    * GraphicsAccess.suspend 对 pending boot 是 no-op，这里是唯一的兜底。
@@ -104,6 +118,7 @@ export function createModeRoutingGraphicsAccess(args: {
       const target = accessFor(desired)
       return target.use().then((ctx) => {
         if (disposed) {
+          discardContext(ctx)
           quarantine(target)
           throw new Error('[portal] graphics router disposed during boot')
         }
@@ -111,6 +126,10 @@ export function createModeRoutingGraphicsAccess(args: {
         // continuation 重新命中同侧 access，不得误判为 stale
         const current = args.resolveMode()
         if (accessFor(current) !== target) {
+          // #31-r3：本次 ctx 的 mount root 已在底层 fromAttempt 创建并
+          // attach——reject 前必须先 detach（不依赖 MountScope 的
+          // post-await cleanup：stale 时 scope 根本拿不到 ctx）
+          discardContext(ctx)
           quarantine(target)
           throw new Error('[portal] frame-mode route superseded before boot resolved')
         }

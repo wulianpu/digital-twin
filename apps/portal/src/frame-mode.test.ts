@@ -3,7 +3,8 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { geodeticToEcef } from '@twin/spatial'
 import type { EngineRuntime, SceneEngineOptions } from '@twin/scene-engine'
-import type { GraphicsDiagnostics } from '@twin/sdk'
+import type { GraphicsContext, GraphicsDiagnostics, GraphicsAccess } from '@twin/sdk'
+import { createModeRoutingGraphicsAccess } from './frameMode'
 import { buildFoundation, type PortalFoundation } from './foundation'
 
 /**
@@ -42,6 +43,9 @@ function makeFakeRuntime(opts: SceneEngineOptions) {
   const canvas = document.createElement('canvas')
   // 真实 createRuntime 在 boot 时把 canvas 挂入 viewport——fake 保持一致
   opts.getViewport?.()?.appendChild(canvas)
+  // #31-r3：与真实 createMountRoot 一致——root 创建即 attach 进容器，
+  // 使 orphan root 泄漏在测试中可观察（而非天生 parent === null 的 false-green）
+  const mountContainer = new THREE.Group()
   const rt = {
     context: {
       renderScene: new THREE.Scene(),
@@ -78,6 +82,7 @@ function makeFakeRuntime(opts: SceneEngineOptions) {
     adaptive: { force: vi.fn() },
     createMountRoot: () => {
       const root = new THREE.Group()
+      mountContainer.add(root)
       return { root, detach: () => root.removeFromParent() }
     },
     suspend: vi.fn(),
@@ -88,6 +93,7 @@ function makeFakeRuntime(opts: SceneEngineOptions) {
     rt: rt as unknown as EngineRuntime,
     orbitFocus,
     canvas,
+    mountContainer,
     suspend: rt.suspend,
     resume: rt.resume,
     dispose: rt.dispose
@@ -99,6 +105,7 @@ type CreatedBoot = {
   rt: EngineRuntime
   orbitFocus: ReturnType<typeof vi.fn>
   canvas: HTMLCanvasElement
+  mountContainer: THREE.Group
   suspend: ReturnType<typeof vi.fn>
   resume: ReturnType<typeof vi.fn>
   dispose: ReturnType<typeof vi.fn>
@@ -274,6 +281,10 @@ describe('Portal frame-mode authority（Issue #31）', () => {
     expect(g.canvas.parentElement).not.toBe(viewport)
     expect(s.canvas.parentElement).toBe(viewport)
     expect(foundation.graphicsAccess.mode).toBe('site')
+    // #31-r3：stale route 的 mount root 在 rejection 可见前已 detach——
+    // GLOBAL container 回到 baseline（site 的 1 个 root 已成功交付给调用方）
+    expect(g.mountContainer.children.length).toBe(0)
+    expect(s.mountContainer.children.length).toBe(1)
   })
 
   it('SITE pending → GLOBAL commit → SITE late resolve：对称方向同样不复活', async () => {
@@ -296,6 +307,9 @@ describe('Portal frame-mode authority（Issue #31）', () => {
     expect(s.suspend).toHaveBeenCalled()
     expect(s.canvas.parentElement).not.toBe(viewport)
     expect(g.canvas.parentElement).toBe(viewport)
+    // #31-r3：对称方向同样无 orphan root（global 的 1 个 root 已成功交付）
+    expect(s.mountContainer.children.length).toBe(0)
+    expect(g.mountContainer.children.length).toBe(1)
   })
 
   it('GLOBAL(1) pending → SITE → GLOBAL(2)：旧 continuation 不误伤重新选中的 GLOBAL authority', async () => {
@@ -324,6 +338,10 @@ describe('Portal frame-mode authority（Issue #31）', () => {
     expect(foundation.graphicsAccess.mode).toBe('global')
     expect(g.canvas.parentElement).toBe(viewport)
     expect(s.canvas.parentElement).not.toBe(viewport)
+    // #31-r3：两个 continuation 都成功交付 root（已 transfer 给调用方）——
+    // 旧 continuation cleanup 不得误删同侧已交付 root
+    expect(g.mountContainer.children.length).toBe(2)
+    expect(s.mountContainer.children.length).toBe(1)
   })
 
   it('dispose 时 pending boot 沿 #14 terminal 机制回收（router 不复活）', async () => {
@@ -335,5 +353,69 @@ describe('Portal frame-mode authority（Issue #31）', () => {
     await expect(useG1).rejects.toThrow()
     expect(boots[0]!.dispose).toHaveBeenCalled()
     expect(boots[0]!.resume).not.toHaveBeenCalled()
+  })
+
+  it('#31-r3：100 次连续 stale mode switch 后 mount-root container 保持 baseline', async () => {
+    const { foundation, created } = await buildWithFactory()
+    const viewport = document.createElement('div')
+    foundation.workspace.setContainers({ map: viewport, graphics: viewport })
+    const SITE = { kind: 'site' as const, siteId: 'site-changxing' }
+    const GLOBAL = { kind: 'global' as const }
+
+    for (let i = 0; i < 100; i++) {
+      const next = i % 2 === 0 ? SITE : GLOBAL
+      foundation.world.setScope(next)
+      // 同步翻转后 revalidation 必见 stale——use() 的 microtask 链在之后运行
+      const p = foundation.graphicsAccess.use()
+      foundation.world.setScope(next === SITE ? GLOBAL : SITE)
+      await expect(p).rejects.toThrow(/superseded/)
+    }
+    // 每次都是 stale route：root 创建即 discard，container 不随切换次数增长
+    expect(created[0]!.mountContainer.children.length).toBe(0)
+    expect(created[1]!.mountContainer.children.length).toBe(0)
+  })
+
+  it('#31-r3：dispose 与 context resolve 交错——未 transfer 的 root 先 detach 再 reject（隔离单元）', async () => {
+    // 直接构造 mock access，精确控制 context resolve 与 dispose 的交错
+    const mkMock = () => {
+      const container = new THREE.Group()
+      const root = new THREE.Group()
+      container.add(root)
+      let resolveUse!: (ctx: GraphicsContext) => void
+      const access: GraphicsAccess = {
+        use: vi.fn(
+          () =>
+            new Promise<GraphicsContext>((res) => {
+              resolveUse = res
+            })
+        ),
+        state: 'ACTIVE' as const,
+        currentContext: undefined,
+        applyQuality: vi.fn(),
+        suspend: vi.fn(),
+        resume: vi.fn(),
+        getDiagnostics: () => undefined,
+        dispose: vi.fn()
+      }
+      return { access, resolveUse: (ctx: GraphicsContext) => resolveUse(ctx), root, suspend: access.suspend }
+    }
+    const viewport = document.createElement('div')
+    const g = mkMock()
+    const s = mkMock()
+    const router = createModeRoutingGraphicsAccess({
+      resolveMode: () => 'global',
+      global: g.access,
+      site: s.access,
+      viewport: () => viewport
+    })
+    const p = router.use()
+    // context resolve（root 已 attach）→ dispose 同步先行 → revalidation 必见 disposed
+    g.resolveUse({ root: g.root } as unknown as GraphicsContext)
+    router.dispose()
+    await expect(p).rejects.toThrow(/disposed/)
+    // root 在 rejection 可见之前已被 discard，runtime 被 quarantine 且不复活
+    expect(g.root.parent).toBeNull()
+    expect(g.suspend).toHaveBeenCalled()
+    expect(g.access.resume).not.toHaveBeenCalled()
   })
 })
