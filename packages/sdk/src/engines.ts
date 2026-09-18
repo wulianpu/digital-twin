@@ -19,6 +19,11 @@ export type FrameInfo = {
 
 export interface PickEvent {
   entity?: EntityRef
+  /**
+   * 命中点的 **Engine 逻辑 scene 坐标**（SITE: frame-local m；GLOBAL:
+   * scene-axis ECEF km）——不含 floating-origin/camera-relative render
+   * shift（Issue #29 同类坐标边界，引擎负责恢复）。无命中时为原点。
+   */
   localPoint: Vec3d
 }
 

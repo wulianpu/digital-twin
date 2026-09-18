@@ -1129,3 +1129,91 @@ describe('SITE floating-origin rebase 状态机（Issue #30）', () => {
     expect(entity.x + origin.offset.x - (cam.x + origin.offset.x)).toBeCloseTo(entity.x - cam.x, 6)
   })
 })
+
+/** -------- Issue #29 同类边界：PickingSystem localPoint 逻辑坐标（floating-origin 隔离） */
+
+import { PickingSystem } from './src/picking'
+import { FloatingOriginState as OriginForPick } from './src/floatingOrigin'
+
+describe('PickingSystem localPoint floating-origin 隔离（#29 同类边界）', () => {
+  // fake DOM element：记录 listener，支持合成 pointer 事件
+  const makeFakeDom = () => {
+    const listeners = new Map<string, (e: unknown) => void>()
+    return {
+      addEventListener: (type: string, cb: (e: unknown) => void) => listeners.set(type, cb),
+      removeEventListener: (type: string) => listeners.delete(type),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 200 }),
+      click: () => {
+        const e = { clientX: 100, clientY: 100 }
+        listeners.get('pointerdown')?.(e)
+        listeners.get('pointerup')?.(e)
+      }
+    }
+  }
+
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
+
+  const makePickScene = (origin: OriginForPick) => {
+    // Engine hierarchy：EngineRoot（唯一 floating-origin shift）> entity mesh
+    const engineRoot = new THREE.Group()
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2))
+    mesh.userData.entityKey = 'agv/A'
+    engineRoot.add(mesh)
+    const dom = makeFakeDom()
+    const picking = new PickingSystem(
+      dom as unknown as HTMLElement,
+      () => engineRoot,
+      () => camera,
+      (v) => origin.renderToLogical(v)
+    )
+    return { engineRoot, mesh, picking, dom }
+  }
+
+  it('GLOBAL：任意非零 worldOffset 下 localPoint 仍为逻辑 scene 坐标', () => {
+    const origin = new OriginForPick()
+    const { engineRoot, mesh, picking, dom } = makePickScene(origin)
+    const L = new THREE.Vector3(6378, 0, 0) // 逻辑 ECEF-scene km
+
+    origin.set(-6378, 0, -20)
+    engineRoot.position.copy(origin.offset)
+    mesh.position.copy(L)
+    engineRoot.updateMatrixWorld(true)
+
+    // camera 看向 mesh 的 render 位置（L + offset）；NDC 中心射线命中盒正面
+    const renderPos = L.clone().add(origin.offset)
+    camera.position.set(renderPos.x, renderPos.y, renderPos.z + 10)
+    camera.lookAt(renderPos)
+    camera.updateMatrixWorld(true)
+
+    const got: Array<{ entity?: unknown; localPoint: { x: number; y: number; z: number } }> = []
+    picking.onPick((e) => got.push(e))
+    dom.click()
+
+    expect(got).toHaveLength(1)
+    expect(got[0]!.entity).toEqual({ namespace: 'agv', id: 'A' })
+    // 命中点 ≈ 逻辑 L 的盒表面（render-world 的 (0,0,-19) 已被恢复为逻辑坐标），
+    // 而不是 render-space 的 ≈(0,0,-19)
+    expect(got[0]!.localPoint.x).toBeCloseTo(6378, 3)
+    expect(got[0]!.localPoint.y).toBeCloseTo(0, 3)
+    expect(Math.abs(got[0]!.localPoint.z)).toBeLessThanOrEqual(1.001)
+  })
+
+  it('无命中时 localPoint 为原点哨兵、entity 为 undefined（哨兵不做坐标变换）', () => {
+    const origin = new OriginForPick()
+    const { engineRoot, picking, dom } = makePickScene(origin)
+    origin.set(-10, 0, 0)
+    engineRoot.position.copy(origin.offset)
+    engineRoot.updateMatrixWorld(true)
+    camera.position.set(0, 0, 10)
+    camera.lookAt(0, 0, 0)
+    camera.updateMatrixWorld(true)
+
+    const got: Array<{ entity?: unknown; localPoint: { x: number; y: number; z: number } }> = []
+    picking.onPick((e) => got.push(e))
+    dom.click()
+
+    expect(got).toHaveLength(1)
+    expect(got[0]!.entity).toBeUndefined()
+    expect(got[0]!.localPoint).toEqual({ x: 0, y: 0, z: 0 })
+  })
+})

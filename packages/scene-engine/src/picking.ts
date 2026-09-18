@@ -8,10 +8,17 @@ export type PickHandler = (event: PickEvent) => void
  * PickingSystem (§46): raycasts the SceneMountRoot on click gestures and
  * reports entity keys via userData.entityKey. Selection state itself stays
  * in the World context (§57) — scenes wire pick events to ctx.selection.
+ *
+ * Issue #29/#31 同类坐标边界：PickEvent.localPoint 的 contract 是 **Engine
+ * 逻辑 scene 坐标**（SITE: frame-local m；GLOBAL: scene-axis ECEF km）——
+ * raycast 的 hit.point 是 render-world 坐标（含 floating-origin ancestor
+ * shift），必须经 renderToLogical（Engine 注入，见 FloatingOriginState）
+ * 恢复逻辑坐标后再上报。
  */
 export class PickingSystem {
   private readonly handlers = new Set<PickHandler>()
   private readonly raycaster = new THREE.Raycaster()
+  private readonly renderToLogical: ((v: THREE.Vector3) => void) | undefined
   private downX = 0
   private downY = 0
   private downTime = 0
@@ -19,8 +26,10 @@ export class PickingSystem {
   constructor(
     private readonly domElement: HTMLElement,
     private readonly getRoot: () => THREE.Object3D | undefined,
-    private readonly getCamera: () => THREE.Camera | undefined
+    private readonly getCamera: () => THREE.Camera | undefined,
+    renderToLogical?: (v: THREE.Vector3) => void
   ) {
+    this.renderToLogical = renderToLogical
     domElement.addEventListener('pointerdown', this.onPointerDown)
     domElement.addEventListener('pointerup', this.onPointerUp)
   }
@@ -60,10 +69,16 @@ export class PickingSystem {
     this.raycaster.setFromCamera(ndc, camera)
     const hits = this.raycaster.intersectObject(root, true)
     const hit = hits.find((h) => findEntityKey(h.object) !== undefined)
-    const point = hit?.point ?? new THREE.Vector3()
+    // Issue #29 同类边界：render-world → logical，floating-origin 不外泄；
+    // 无命中的原点是合成哨兵（非 render-space 坐标），不做变换
+    let localPoint = { x: 0, y: 0, z: 0 }
+    if (hit) {
+      this.renderToLogical?.(hit.point)
+      localPoint = { x: hit.point.x, y: hit.point.y, z: hit.point.z }
+    }
     const event: PickEvent = {
       entity: hit ? findEntityKey(hit.object) : undefined,
-      localPoint: { x: point.x, y: point.y, z: point.z }
+      localPoint
     }
     for (const handler of [...this.handlers]) handler(event)
   }

@@ -145,7 +145,10 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     // Issue #17-r2：raycast 实际的 SceneMountContainer——GLOBAL 模式下
     // mount roots 挂在 globalSceneRoots（而非 sceneRoots），保证可拾取
     () => (earth ? globalSceneRoots : sceneRoots),
-    () => camera
+    () => camera,
+    // Issue #29 同类边界：hit.point 是 render-world 坐标——PickEvent.
+    // localPoint 必须先恢复 Engine 逻辑坐标（floating-origin 不外泄）
+    (v) => origin.renderToLogical(v)
   )
 
   const frameSubs = new Set<FrameCallback>()
