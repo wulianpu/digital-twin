@@ -108,3 +108,50 @@ function percentile(sorted: number[], p: number): number {
   const index = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * sorted.length)))
   return sorted[index]
 }
+
+/**
+ * Issue #35：render-loop 的统一 run authority——多个独立「禁止渲染」原因
+ * （app/mode suspend、WebGL context lost、terminal dispose）的合取 gate。
+ *
+ * 核心不变量：任意 blocking reason 仍为 true 时，另一个 reason 被解除都
+ * 不得启动 FrameLoop（`shouldRun = !disposed && !appSuspended && !contextLost`）。
+ * 之前 mode/app suspend 直接操作 FrameLoop、context-loss 只 stop 不进状态，
+ * 「inactive → context lost → 切回 active」会在 GPU 恢复前越权重启 RAF。
+ * reconcile 幂等（FrameLoop.start 自身防重入），不会产生重复 RAF。
+ */
+export class RenderLoopGate {
+  private appSuspended = false
+  private contextLost = false
+  private disposed = false
+
+  constructor(
+    private readonly loop: { start(): void; stop(): void }
+  ) {}
+
+  private reconcile(): void {
+    if (this.canRender) this.loop.start()
+    else this.loop.stop()
+  }
+
+  /** app / frame-mode 的临时暂停（#31 mode route、workspace 切换等）。 */
+  setAppSuspended(suspended: boolean): void {
+    this.appSuspended = suspended
+    this.reconcile()
+  }
+
+  /** WebGL context lost/restored（ContextLossGuard 接线）。 */
+  setContextLost(lost: boolean): void {
+    this.contextLost = lost
+    this.reconcile()
+  }
+
+  /** terminal——最高优先级：dispose 后任何 reason 解除都不得恢复运行。 */
+  dispose(): void {
+    this.disposed = true
+    this.reconcile()
+  }
+
+  get canRender(): boolean {
+    return !this.disposed && !this.appSuspended && !this.contextLost
+  }
+}

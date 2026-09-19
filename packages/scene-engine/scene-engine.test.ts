@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { FrameLoop } from './src/frameLoop'
 import { AdaptiveQuality, profileSettings, runtimeQualitySettings } from './src/adaptive'
+import { RenderLoopGate } from './src/frameLoop'
 import { TilesSystem, type TilesRendererLike } from './src/tiles'
 import { AssetLeaseManager, disposeObject3D, type AssetSource } from './src/resources'
 import * as THREE from 'three'
@@ -1463,5 +1464,99 @@ describe('configured tiles commit authority（Issue #34）', () => {
     expect(created[0]!.dispose).not.toHaveBeenCalled()
     expect(attached).toHaveLength(1)
     expect(system.tilesetCount).toBe(1)
+  })
+})
+
+/** -------- Issue #35：render-loop 统一 run authority（context-lost × suspend 合取 gate） */
+
+describe('RenderLoopGate（Issue #35）', () => {
+  const mkLoop = () => {
+    let running = false
+    let startCount = 0
+    const loop = {
+      start() {
+        if (running) return
+        running = true
+        startCount++
+      },
+      stop() {
+        running = false
+      },
+      get isRunning() {
+        return running
+      },
+      get startCount() {
+        return startCount
+      }
+    }
+    return loop as { start(): void; stop(): void; isRunning: boolean; startCount: number }
+  }
+
+  it('suspend → context lost → resume（restore 前）：FrameLoop 仍停止', () => {
+    const loop = mkLoop()
+    const gate = new RenderLoopGate(loop)
+    gate.setAppSuspended(true)
+    expect(loop.isRunning).toBe(false)
+    gate.setAppSuspended(false)
+    expect(loop.isRunning).toBe(true) // 基线：无阻塞原因时运行
+    gate.setAppSuspended(true)
+    gate.setContextLost(true)
+    gate.setAppSuspended(false) // 关键路径：mode resume 在 restore 之前
+    expect(loop.isRunning).toBe(false) // context lost 仍未解除——不得运行
+    gate.setContextLost(false) // restored → 恢复
+    expect(loop.isRunning).toBe(true)
+  })
+
+  it('context lost → suspend → restored：仍 app-suspended 则 restore 后继续停止', () => {
+    const loop = mkLoop()
+    const gate = new RenderLoopGate(loop)
+    gate.setContextLost(true)
+    gate.setAppSuspended(true)
+    gate.setContextLost(false) // restored——但 app 仍 suspend
+    expect(loop.isRunning).toBe(false)
+    gate.setAppSuspended(false) // 显式 resume 才启动
+    expect(loop.isRunning).toBe(true)
+  })
+
+  it('context lost → dispose → late restored：永久不恢复', () => {
+    const loop = mkLoop()
+    const gate = new RenderLoopGate(loop)
+    gate.setContextLost(true)
+    gate.dispose()
+    // 浏览器晚到的 restored / resume 均不得复活
+    gate.setContextLost(false)
+    gate.setAppSuspended(false)
+    expect(loop.isRunning).toBe(false)
+  })
+
+  it('100 次 lost/restored × suspend/resume 交错：RAF 不重复、终态正确', () => {
+    const loop = mkLoop()
+    const gate = new RenderLoopGate(loop)
+    gate.setAppSuspended(false)
+    expect(loop.isRunning).toBe(true)
+    for (let i = 0; i < 100; i++) {
+      gate.setContextLost(true)
+      gate.setAppSuspended(true)
+      gate.setContextLost(false) // restored 时仍 app-suspended
+      expect(loop.isRunning).toBe(false)
+      gate.setAppSuspended(false) // 显式 resume
+      expect(loop.isRunning).toBe(true)
+      // start 只在「停止 → 运行」真实转换时发生：初始 1 次 + 每轮 resume 1 次
+      expect(loop.startCount).toBe(i + 2)
+    }
+  })
+
+  it('幂等：同 reason 重复 suspend/resume 不重复 start', () => {
+    const loop = mkLoop()
+    const gate = new RenderLoopGate(loop)
+    gate.setAppSuspended(true)
+    gate.setAppSuspended(true)
+    gate.setAppSuspended(false)
+    gate.setAppSuspended(false)
+    expect(loop.isRunning).toBe(true)
+    expect(loop.startCount).toBe(1)
+    gate.setContextLost(true)
+    gate.setContextLost(true)
+    expect(loop.isRunning).toBe(false)
   })
 })

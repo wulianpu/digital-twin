@@ -10,7 +10,7 @@ import type {
   SceneEngineOptions,
   WaterState
 } from './types'
-import { FrameLoop, type FrameCallback } from './frameLoop'
+import { FrameLoop, RenderLoopGate, type FrameCallback } from './frameLoop'
 import { dispatchCallbacks, makeFaultSink } from './callbacks'
 import { OrbitController } from './orbit'
 import { EnvironmentSystem } from './environment'
@@ -134,11 +134,12 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     renderer.shadowMap.enabled = s.shadows
   })
 
-  // Issue #34：suspended = transient 渲染权威（canRender）；
-  // disposed = terminal 资源所有权权威（canOwnResources/isTerminal）。
-  // 两者必须分离——suspend 不得作为 Engine-owned 资源的丢弃依据。
-  let suspended = false
+  // Issue #34：disposed = terminal 资源所有权权威（canOwnResources/isTerminal）
+  // ——suspend 不得作为 Engine-owned 资源的丢弃依据。
   let disposed = false
+  // Issue #35：render-loop 统一 run authority——app/mode suspend、
+  // context lost、disposed 三个独立禁止原因的合取 gate。
+  const renderGate = new RenderLoopGate(frameLoop)
   const orbit = new OrbitController(renderer.domElement)
 
   const picking = new PickingSystem(
@@ -232,10 +233,11 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
   // ContextLossGuard 统一处理（丢失停帧 / 恢复重置并续跑）。
   const contextLossGuard = new ContextLossGuard(renderer.domElement, {
     suspendLoop: () => {
-      frameLoop.stop()
+      renderGate.setContextLost(true)
     },
+    // guard 顺序保证 resetRendererState 先于本回调（reset-before-run）
     resumeLoop: () => {
-      if (!suspended) frameLoop.start()
+      renderGate.setContextLost(false)
     },
     resetRendererState: () => {
       renderer.resetState?.()
@@ -279,13 +281,10 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     global: earth,
     entities: entitySystem,
     suspend: () => {
-      suspended = true
-      frameLoop.stop()
+      renderGate.setAppSuspended(true)
     },
     resume: () => {
-      if (!suspended) return
-      suspended = false
-      frameLoop.start()
+      renderGate.setAppSuspended(false)
     },
     getDiagnostics: (): GraphicsDiagnostics => ({
       quality,
@@ -339,8 +338,8 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     suspend: () => context.suspend(),
     resume: () => context.resume(),
     dispose: () => {
-      disposed = true // Issue #34：terminal authority 与 suspended 分离
-      suspended = true // 渲染权威同步停止
+      disposed = true // Issue #34：terminal authority 与 suspend 分离
+      renderGate.dispose() // Issue #35：terminal 最高优先级，停止并锁死渲染
       frameLoop.dispose()
       resizeObserver.disconnect()
       contextLossGuard.dispose()
