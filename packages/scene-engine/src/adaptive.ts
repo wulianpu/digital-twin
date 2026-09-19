@@ -42,7 +42,14 @@ export class AdaptiveQuality {
   }
 }
 
-/** Per-profile rendering policy (§67). */
+/**
+ * Per-profile rendering policy (§67)——**boot-time 全集**。
+ *
+ * Issue #33：其中 `antialias` 是 WebGL context creation-time 选项，
+ * 运行期不可切换；applyQuality/adaptive 运行期只能完整生效
+ * runtimeQualitySettings(profile) 子集。diagnostics.quality 表示动态
+ * knob 已收敛的档位，不声称 antialias 已随运行期切档改变。
+ */
 export function profileSettings(profile: QualityProfile): {
   maxPixelRatio: number
   antialias: boolean
@@ -58,4 +65,17 @@ export function profileSettings(profile: QualityProfile): {
     case 'EXHIBITION':
       return { maxPixelRatio: 2.5, antialias: true, shadows: true }
   }
+}
+
+/**
+ * Issue #33（方案 B1）：运行期可完整生效的 profile knob 子集——
+ * applyQuality / AdaptiveQuality 的动态应用只允许包含这里面的项；
+ * `antialias` 是 boot-time knob（见 profileSettings），运行期不可切换。
+ */
+export function runtimeQualitySettings(profile: QualityProfile): {
+  maxPixelRatio: number
+  shadows: boolean
+} {
+  const s = profileSettings(profile)
+  return { maxPixelRatio: s.maxPixelRatio, shadows: s.shadows }
 }

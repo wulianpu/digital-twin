@@ -106,8 +106,13 @@ function setTimeSpeed(speed: number): void {
   foundation.world.clock.setSpeed(speed)
 }
 
+// Issue #33：质量选择必须有可观察的 selected 状态——避免「点击成功但
+// 实际 no-op」不可见。初始值为 Foundation 配置的默认档。
+const selectedQuality = ref<QualityProfile>(foundation.config.defaultQuality)
+
 function setQuality(profile: QualityProfile): void {
   foundation.graphicsAccess.applyQuality(profile)
+  selectedQuality.value = profile
 }
 
 const QUALITIES: QualityProfile[] = ['OFFICE', 'STANDARD', 'HIGH', 'EXHIBITION']
@@ -218,6 +223,7 @@ const QUALITIES: QualityProfile[] = ['OFFICE', 'STANDARD', 'HIGH', 'EXHIBITION']
         :key="q"
         class="twin-btn portal-topbar-btn portal-quality-btn"
         :data-quality="q"
+        :data-active="q === selectedQuality"
         @click="setQuality(q)"
       >
         {{ q[0] + q.slice(1).toLowerCase() }}

@@ -39,6 +39,11 @@ export function createGraphicsAccess(
 ): GraphicsAccess {
   let state: SceneEngineState = 'UNINITIALIZED'
   let disposed = false
+  // Issue #33：desired quality policy 是 access 的持久状态——applyQuality
+  // 在 UNINITIALIZED / boot pending 时也必须记录 intent，boot 以当前
+  // desired 起步，commit 时收敛到最新值；否则「先选质量后进 3D」与
+  // 「一侧已 boot、另一侧稍后首启」都会静默回到 options.quality。
+  let desiredQuality: QualityProfile = options.quality ?? 'STANDARD'
   // Issue #14：attempt identity（generation）+ terminal monotonicity——
   // 失败可重试（reject 只清本 attempt 的 pending slot）；
   // dispose 后 DISPOSED 永不复活，late runtime exactly-once 回收。
@@ -50,11 +55,11 @@ export function createGraphicsAccess(
       let rt: EngineRuntime
       const create = deps.createRuntime
       if (create) {
-        rt = await create(options)
+        rt = await create({ ...options, quality: desiredQuality })
       } else {
         const mod = await import('./runtime')
         if (attempt !== generation || disposed) throw abortedError()
-        rt = await mod.createRuntime(options)
+        rt = await mod.createRuntime({ ...options, quality: desiredQuality })
       }
       return commit(attempt, rt)
     } catch (error) {
@@ -75,6 +80,9 @@ export function createGraphicsAccess(
     }
     runtimes.set(access, rt)
     state = 'ACTIVE'
+    // #33：boot pending 期间的 applyQuality 在 commit 时补齐——effective
+    // 收敛到最新 desired，不提交 boot 开始时的旧 profile（last-write-wins）
+    rt.adaptive?.force(desiredQuality)
     return rt
   }
 
@@ -125,6 +133,8 @@ export function createGraphicsAccess(
     return fromAttempt(attempt)
   },
     applyQuality(profile: QualityProfile) {
+      if (disposed) return // #33：terminal 后 no-op（绝不创建新 runtime）
+      desiredQuality = profile // 持久 intent——未 boot 时也不丢失
       runtimes.get(access)?.adaptive.force(profile)
     },
     suspend() {

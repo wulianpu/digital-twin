@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { FrameLoop } from './src/frameLoop'
-import { AdaptiveQuality, profileSettings } from './src/adaptive'
+import { AdaptiveQuality, profileSettings, runtimeQualitySettings } from './src/adaptive'
 import { TilesSystem, type TilesRendererLike } from './src/tiles'
 import { AssetLeaseManager, disposeObject3D, type AssetSource } from './src/resources'
 import * as THREE from 'three'
 import { createGraphicsAccess, SpatialStateBuffer } from './src/public'
 import type { EngineRuntime } from './src/runtime'
+import type { SceneEngineOptions } from './src/types'
 import { createSceneViewDriver, siteExtentMeters } from './src/driver'
 import { ContextLossGuard } from './src/contextLoss'
 
@@ -687,6 +688,100 @@ describe('GraphicsAccess lazy boot 状态机（Issue #14）', () => {
     await expect(access.use()).rejects.toThrowError(/disposed/)
     expect(createRuntime).not.toHaveBeenCalled()
     expect(access.currentContext).toBeUndefined()
+  })
+})
+
+describe('GraphicsAccess desired quality authority（Issue #33）', () => {
+  const makeAdaptiveRt = () => {
+    const adaptive = { force: vi.fn() }
+    const rt = {
+      context: { getDiagnostics: () => undefined, suspend: () => {}, resume: () => {} },
+      adaptive,
+      createMountRoot: () => ({ root: {}, detach: () => {} }),
+      dispose: () => {},
+      suspend: () => {},
+      resume: () => {}
+    }
+    return rt
+  }
+
+  it('UNINITIALIZED 时 applyQuality(OFFICE) → 首次 boot 以 OFFICE 起步（非 options.quality）', async () => {
+    const captured: SceneEngineOptions[] = []
+    const access = createGraphicsAccess(
+      { getViewport: () => document.createElement('div'), quality: 'STANDARD' },
+      {
+        createRuntime: async (opts) => {
+          captured.push(opts)
+          return makeAdaptiveRt() as unknown as EngineRuntime
+        }
+      }
+    )
+    access.applyQuality('OFFICE') // 尚未 boot——intent 必须被持久记录
+    await access.use()
+    expect(captured[0]!.quality).toBe('OFFICE')
+    access.dispose()
+  })
+
+  it('boot pending 期间 applyQuality → late resolve 后 effective 收敛到最新 desired', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const captured: SceneEngineOptions[] = []
+    const rts: Array<{ adaptive: { force: ReturnType<typeof vi.fn> } }> = []
+    const access = createGraphicsAccess(
+      { getViewport: () => document.createElement('div'), quality: 'STANDARD' },
+      {
+        createRuntime: async (opts) => {
+          captured.push(opts)
+          await gate
+          const rt = makeAdaptiveRt()
+          rts.push(rt)
+          return rt as unknown as EngineRuntime
+        }
+      }
+    )
+    const usePromise = access.use() // boot pending（quality=STANDARD 起步）
+    access.applyQuality('OFFICE') // pending 期间用户切档
+    release()
+    await usePromise
+    // runtime 以旧 profile 创建，但 commit 必须收敛到最新 desired
+    expect(captured[0]!.quality).toBe('STANDARD')
+    expect(rts[0]!.adaptive.force).toHaveBeenCalledWith('OFFICE')
+    access.dispose()
+  })
+
+  it('applyQuality last-write-wins；dispose 后 no-op 不创建新 runtime', async () => {
+    const captured: SceneEngineOptions[] = []
+    const access = createGraphicsAccess(
+      { getViewport: () => document.createElement('div') },
+      {
+        createRuntime: async (opts) => {
+          captured.push(opts)
+          return makeAdaptiveRt() as unknown as EngineRuntime
+        }
+      }
+    )
+    access.applyQuality('HIGH')
+    access.applyQuality('OFFICE') // last-write-wins
+    await access.use()
+    expect(captured[0]!.quality).toBe('OFFICE')
+
+    access.dispose()
+    expect(() => access.applyQuality('EXHIBITION')).not.toThrow()
+    expect(captured).toHaveLength(1) // 不复活/不新建 runtime
+  })
+
+  it('动态 knob 矩阵：runtimeQualitySettings 不含 antialias，pixel/shadow 与 profileSettings 一致', () => {
+    for (const profile of ['OFFICE', 'STANDARD', 'HIGH', 'EXHIBITION'] as const) {
+      const boot = profileSettings(profile)
+      const runtime = runtimeQualitySettings(profile)
+      expect(runtime).not.toHaveProperty('antialias') // boot-time knob 分离
+      expect(runtime.maxPixelRatio).toBe(boot.maxPixelRatio)
+      expect(runtime.shadows).toBe(boot.shadows)
+    }
+    expect(profileSettings('OFFICE').antialias).toBe(false)
+    expect(profileSettings('STANDARD').antialias).toBe(true)
   })
 })
 

@@ -19,7 +19,7 @@ import { TilesSystem } from './tiles'
 import { EntitySystem } from './entities'
 import { FLOAT_ORIGIN_THRESHOLD_M, FloatingOriginState } from './floatingOrigin'
 import { PickingSystem } from './picking'
-import { AdaptiveQuality, profileSettings } from './adaptive'
+import { AdaptiveQuality, profileSettings, runtimeQualitySettings } from './adaptive'
 import { ContextLossGuard } from './contextLoss'
 
 /**
@@ -132,7 +132,9 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
   )
   const adaptive = new AdaptiveQuality(quality, maxQuality, (p) => {
     quality = p
-    const s = profileSettings(p)
+    // Issue #33：动态切档只应用 runtime-mutable knob 子集（antialias 是
+    // context creation-time 选项，运行期不可切换，见 adaptive.ts 契约）
+    const s = runtimeQualitySettings(p)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, s.maxPixelRatio))
     renderer.shadowMap.enabled = s.shadows
   })

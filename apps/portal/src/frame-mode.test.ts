@@ -405,6 +405,28 @@ describe('Portal frame-mode authority（Issue #31）', () => {
     expect(created[1]!.opts.tiles).toBeDefined()
   })
 
+  it('#33：quality 为跨 runtime 持久 authority——一侧已 boot 时选档，另一侧首启即从该档起步', async () => {
+    const { foundation, created } = await buildWithFactory()
+    await foundation.graphicsAccess.use() // GLOBAL boot（默认 quality）
+    expect(created).toHaveLength(1)
+
+    // 用户切档：已 boot 的 GLOBAL 立即生效；未 boot 的 SITE 记录 intent
+    foundation.graphicsAccess.applyQuality('OFFICE')
+
+    foundation.world.setScope({ kind: 'site', siteId: 'site-changxing' })
+    await foundation.graphicsAccess.use()
+    // SITE 首次 boot 必须从用户所选档起步，而非 config.defaultQuality
+    expect(created[1]!.opts.quality).toBe('OFFICE')
+    // GLOBAL→SITE→GLOBAL 不会把质量恢复成默认档
+    foundation.world.setScope({ kind: 'global' })
+    await foundation.graphicsAccess.use()
+    expect(created).toHaveLength(2)
+    expect(created[0]!.opts.quality).not.toBe('OFFICE') // GLOBAL 仍以旧档创建…
+    // …但 applyQuality 的 force 使其 effective 已收敛到用户档
+    const globalRt = created[0]!.rt as unknown as { adaptive: { force: ReturnType<typeof vi.fn> } }
+    expect(globalRt.adaptive.force).toHaveBeenCalledWith('OFFICE')
+  })
+
   it('#32：getAggregateDiagnostics 提供双 runtime breakdown 与 totals，且不改变 lifecycle', async () => {
     const { foundation, created } = await buildWithFactory()
     await foundation.graphicsAccess.use() // global boot
