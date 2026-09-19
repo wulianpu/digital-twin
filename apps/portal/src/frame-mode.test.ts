@@ -4,6 +4,8 @@ import * as THREE from 'three'
 import { geodeticToEcef } from '@twin/spatial'
 import type { EngineRuntime, SceneEngineOptions } from '@twin/scene-engine'
 import type { GraphicsContext, GraphicsDiagnostics, GraphicsAccess } from '@twin/sdk'
+import type { TilesRendererLike } from '@twin/scene-engine'
+import { TilesSystem, attachConfiguredTilesets } from '@twin/scene-engine'
 import { createModeRoutingGraphicsAccess } from './frameMode'
 import { buildFoundation, type PortalFoundation } from './foundation'
 
@@ -376,6 +378,78 @@ describe('Portal frame-mode authority（Issue #31）', () => {
   })
 
   // ---- Issue #32：mode-specific resource policy + aggregate diagnostics ----
+
+  it('#34：SITE configured tiles pending → 切 GLOBAL → tiles resolve → 切回 SITE：tiles 不丢失', async () => {
+    // SITE runtime 内跑真实 TilesSystem + attachConfiguredTilesets（deferred renderer）
+    let siteRelease!: (r: TilesRendererLike) => void
+    const gate = new Promise<TilesRendererLike>((res) => {
+      siteRelease = res
+    })
+    const siteTiles = new TilesSystem({}, () => gate)
+    const attached: THREE.Group[] = []
+    let siteDisposed = false
+    const renderer = {
+      group: new THREE.Group(),
+      setCamera: () => {},
+      setResolution: () => {},
+      update: () => {},
+      dispose: vi.fn(),
+      lruCache: undefined
+    } as unknown as TilesRendererLike
+
+    const created: Array<{ rt: EngineRuntime; dispose: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn> }> = []
+    const foundation = buildFoundation({
+      graphicsRuntimeFactory: async (opts) => {
+        const fake = makeFakeRuntime(opts)
+        if (opts.global === true) return fake.rt
+        // SITE runtime：configured tiles bootstrap 用真实 helper
+        attachConfiguredTilesets(
+          siteTiles,
+          ['https://tiles.test/site.json'],
+          (g) => attached.push(g),
+          () => siteDisposed
+        )
+        const rt = {
+          ...fake.rt,
+          dispose: () => {
+            siteDisposed = true
+            siteTiles.dispose()
+            fake.dispose()
+          }
+        } as EngineRuntime
+        created.push({ rt, dispose: fake.dispose, resume: fake.resume })
+        return rt
+      }
+    })
+    disposables.push(foundation)
+    foundation.workspace.setContainers({
+      map: document.createElement('div'),
+      graphics: document.createElement('div')
+    })
+
+    // 1. SITE boot（tiles 仍 pending）
+    foundation.world.setScope({ kind: 'site', siteId: 'site-changxing' })
+    await foundation.graphicsAccess.use()
+    expect(siteTiles.tilesetCount).toBe(0)
+
+    // 2. 切 GLOBAL：router suspend SITE（transient，非 terminal）
+    foundation.world.setScope({ kind: 'global' })
+    await foundation.graphicsAccess.use()
+
+    // 3. tiles 在 SITE 非活跃期间 resolve——必须 attach 而非被丢弃
+    siteRelease(renderer)
+    await new Promise((res) => setTimeout(res, 0))
+    expect(attached).toHaveLength(1)
+    expect(renderer.dispose).not.toHaveBeenCalled()
+    expect(siteTiles.tilesetCount).toBe(1)
+
+    // 4. 切回 SITE：resume 后资源完整，无重复 factory/dispose
+    foundation.world.setScope({ kind: 'site', siteId: 'site-changxing' })
+    await foundation.graphicsAccess.use()
+    expect(siteTiles.tilesetCount).toBe(1)
+    expect(attached).toHaveLength(1)
+    expect(renderer.dispose).not.toHaveBeenCalled()
+  })
 
   it('#32：SITE-only 资源策略不进 GLOBAL runtime（tiles/stateBuffer/water/getActiveFrame）', async () => {
     const { foundation, created } = await buildWithFactory()

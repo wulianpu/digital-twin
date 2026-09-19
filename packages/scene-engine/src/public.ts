@@ -251,6 +251,7 @@ function tryLocal(spatial: SpatialApi, target: GeodeticPosition): Vec3d {
 }
 
 export { createSceneViewDriver, siteExtentMeters }
+export { attachConfiguredTilesets } from './runtime'
 export { ContextLossGuard } from './contextLoss'
 export type { ContextLossHooks } from './contextLoss'
 export type {

@@ -108,22 +108,17 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
 
   // I4-3：配置化 tileset 接入——唯一入口仍是 TilesSystem（§48 禁止 Scene
   // 自建 TilesRenderer）；诊断随 getDiagnostics 自动输出。
-  for (const url of options.tiles?.tilesetUrls ?? []) {
-    void tiles
-      .addTileset(url)
-      .then((handle) => {
-        // Issue #25-D：runtime terminal authority——dispose 已清理层级后，
-        // 迟到的 tileset 不得重新挂回；立即 remove 兜底回收。
-        if (suspended) {
-          handle.remove()
-          return
-        }
-        baseWorldRoot.add(handle.group)
-      })
-      .catch((error) => {
-        console.error(`[scene-engine] tileset 接入失败: ${url}`, error)
-      })
-  }
+  // Issue #34：commit authority 只看 terminal（disposed）——suspend 是
+  // transient 渲染权威，suspend 期间 resolve 的 tileset 照常 attach
+  //（frameLoop 已停，无 per-frame update），resume 后自然继续。
+  attachConfiguredTilesets(
+    tiles,
+    options.tiles?.tilesetUrls ?? [],
+    (group) => {
+      baseWorldRoot.add(group)
+    },
+    () => disposed
+  )
   // Issue #29：floating-origin 状态唯一权威——EntitySystem 注入
   // render→logical 转换，getPosition() 返回逻辑 scene 坐标而非 render 坐标。
   const origin = new FloatingOriginState()
@@ -139,7 +134,11 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     renderer.shadowMap.enabled = s.shadows
   })
 
+  // Issue #34：suspended = transient 渲染权威（canRender）；
+  // disposed = terminal 资源所有权权威（canOwnResources/isTerminal）。
+  // 两者必须分离——suspend 不得作为 Engine-owned 资源的丢弃依据。
   let suspended = false
+  let disposed = false
   const orbit = new OrbitController(renderer.domElement)
 
   const picking = new PickingSystem(
@@ -340,7 +339,8 @@ export async function createRuntime(options: SceneEngineOptions): Promise<Engine
     suspend: () => context.suspend(),
     resume: () => context.resume(),
     dispose: () => {
-      suspended = true // Issue #25-D：先进入终态，层级清理随后
+      disposed = true // Issue #34：terminal authority 与 suspended 分离
+      suspended = true // 渲染权威同步停止
       frameLoop.dispose()
       resizeObserver.disconnect()
       contextLossGuard.dispose()
@@ -399,4 +399,35 @@ function round2(v: number): number {
 function readHeapMB(): number | undefined {
   const memory = (performance as { memory?: { usedJSHeapSize: number } }).memory
   return memory ? Math.round((memory.usedJSHeapSize / 1048576) * 10) / 10 : undefined
+}
+
+/**
+ * Issue #34：configured tileset 的异步 commit authority（从 createRuntime
+ * 提取，可无 WebGL 单测）。
+ *
+ * - terminal（runtime `isTerminal()` 或 `tiles.isDisposed`）→ late handle
+ *   remove（renderer 已由 TilesSystem exactly-once 回收，#25 不回退）；
+ * - 否则（ACTIVE **或 SUSPENDED**）→ attach——suspend 只停止渲染，
+ *   Engine-owned 资源 ownership 不变；canOwnResources = !isTerminal()。
+ */
+export function attachConfiguredTilesets(
+  tiles: TilesSystem,
+  urls: readonly string[],
+  attach: (group: THREE.Group) => void,
+  isTerminal: () => boolean
+): void {
+  for (const url of urls) {
+    void tiles
+      .addTileset(url)
+      .then((handle) => {
+        if (isTerminal() || tiles.isDisposed) {
+          handle.remove()
+          return
+        }
+        attach(handle.group)
+      })
+      .catch((error) => {
+        console.error(`[scene-engine] tileset 接入失败: ${url}`, error)
+      })
+  }
 }

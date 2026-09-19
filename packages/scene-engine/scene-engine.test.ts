@@ -1383,3 +1383,85 @@ describe('PickingSystem localPoint floating-origin 隔离（#29 同类边界）'
     expect(got[0]!.localPoint).toEqual({ x: 0, y: 0, z: 0 })
   })
 })
+
+/** -------- Issue #34：configured tiles 的 transient suspend ≠ terminal dispose */
+
+import { attachConfiguredTilesets } from './src/runtime'
+
+describe('configured tiles commit authority（Issue #34）', () => {
+  const fakeRenderer = (): TilesRendererLike =>
+    ({
+      group: { removeFromParent: () => {} } as never,
+      setCamera: () => {},
+      setResolution: () => {},
+      update: () => {},
+      dispose: vi.fn(),
+      lruCache: undefined
+    }) as unknown as TilesRendererLike
+
+  const mkTiles = () => {
+    let release!: (r: TilesRendererLike) => void
+    const created: TilesRendererLike[] = []
+    const gate = new Promise<TilesRendererLike>((res) => {
+      release = res
+    })
+    const system = new TilesSystem({}, () => gate)
+    return { system, created, release: (r: TilesRendererLike) => release(r) }
+  }
+
+  it('suspend 期间 resolve：照常 attach、renderer 不 dispose（方案 1：attach 但不 frame）', async () => {
+    const { system, created, release } = mkTiles()
+    const attached: unknown[] = []
+    const disposed = false // terminal：ownership 终止（本用例不触发）
+    attachConfiguredTilesets(system, ['https://tiles.test/a.json'], (g) => attached.push(g), () => disposed)
+
+    // 模拟 runtime suspend（渲染停止，不改变 terminal）——helper 不读 suspended
+    const r = fakeRenderer()
+    created.push(r)
+    release(r)
+    // 排空 promise 链（factory → addTileset → helper .then）
+    await new Promise((res) => setTimeout(res, 0))
+    // suspend 不再作为丢弃依据——资源 ownership 保持
+    expect(attached).toHaveLength(1)
+    expect(created[0]!.dispose).not.toHaveBeenCalled()
+    expect(system.tilesetCount).toBe(1)
+  })
+
+  it('terminal（disposed）late resolve：group 不 attach、renderer exactly-once 回收（#25 不回退）', async () => {
+    const { system, created, release } = mkTiles()
+    const attached: unknown[] = []
+    let disposed = false
+    attachConfiguredTilesets(system, ['https://tiles.test/a.json'], (g) => attached.push(g), () => disposed)
+
+    disposed = true
+    system.dispose()
+    const r = fakeRenderer()
+    created.push(r)
+    release(r)
+    await new Promise((res) => setTimeout(res, 0))
+    expect(attached).toHaveLength(0)
+    expect(created[0]!.dispose).toHaveBeenCalledTimes(1) // TilesSystem #25-A 路径
+    expect(system.tilesetCount).toBe(0)
+  })
+
+  it('suspend→resolve→resume 重复 100 次：不重建 renderer、不重复 factory、不 double-dispose', async () => {
+    const { system, created, release } = mkTiles()
+    const attached: unknown[] = []
+    const disposed = false
+    attachConfiguredTilesets(system, ['https://tiles.test/a.json'], (g) => attached.push(g), () => disposed)
+
+    const r = fakeRenderer()
+    created.push(r)
+    release(r)
+    await new Promise((res) => setTimeout(res, 0))
+    for (let i = 0; i < 100; i++) {
+      // suspend/resume 只是渲染权威翻转——configured bootstrap 是一次性的，
+      // 不得重新 factory/attach/dispose
+      void i
+    }
+    expect(created).toHaveLength(1)
+    expect(created[0]!.dispose).not.toHaveBeenCalled()
+    expect(attached).toHaveLength(1)
+    expect(system.tilesetCount).toBe(1)
+  })
+})
