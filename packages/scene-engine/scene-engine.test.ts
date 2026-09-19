@@ -1352,7 +1352,7 @@ describe('PickingSystem localPoint floating-origin 隔离（#29 同类边界）'
     camera.lookAt(renderPos)
     camera.updateMatrixWorld(true)
 
-    const got: Array<{ entity?: unknown; localPoint: { x: number; y: number; z: number } }> = []
+    const got: Array<{ entity?: unknown; localPoint?: { x: number; y: number; z: number } }> = []
     picking.onPick((e) => got.push(e))
     dom.click()
 
@@ -1360,12 +1360,12 @@ describe('PickingSystem localPoint floating-origin 隔离（#29 同类边界）'
     expect(got[0]!.entity).toEqual({ namespace: 'agv', id: 'A' })
     // 命中点 ≈ 逻辑 L 的盒表面（render-world 的 (0,0,-19) 已被恢复为逻辑坐标），
     // 而不是 render-space 的 ≈(0,0,-19)
-    expect(got[0]!.localPoint.x).toBeCloseTo(6378, 3)
-    expect(got[0]!.localPoint.y).toBeCloseTo(0, 3)
-    expect(Math.abs(got[0]!.localPoint.z)).toBeLessThanOrEqual(1.001)
+    expect(got[0]!.localPoint!.x).toBeCloseTo(6378, 3)
+    expect(got[0]!.localPoint!.y).toBeCloseTo(0, 3)
+    expect(Math.abs(got[0]!.localPoint!.z)).toBeLessThanOrEqual(1.001)
   })
 
-  it('无命中时 localPoint 为原点哨兵、entity 为 undefined（哨兵不做坐标变换）', () => {
+  it('#36：无命中 → localPoint undefined（不用合法坐标承载 miss）', () => {
     const origin = new OriginForPick()
     const { engineRoot, picking, dom } = makePickScene(origin)
     origin.set(-10, 0, 0)
@@ -1375,13 +1375,63 @@ describe('PickingSystem localPoint floating-origin 隔离（#29 同类边界）'
     camera.lookAt(0, 0, 0)
     camera.updateMatrixWorld(true)
 
-    const got: Array<{ entity?: unknown; localPoint: { x: number; y: number; z: number } }> = []
+    const got: Array<{ entity?: unknown; localPoint?: { x: number; y: number; z: number } }> = []
     picking.onPick((e) => got.push(e))
     dom.click()
 
     expect(got).toHaveLength(1)
     expect(got[0]!.entity).toBeUndefined()
-    expect(got[0]!.localPoint).toEqual({ x: 0, y: 0, z: 0 })
+    expect(got[0]!.localPoint).toBeUndefined() // miss 明确可判别
+  })
+
+  it('#36：命中无 entityKey 的普通几何 → 是 hit 而非 miss（entity 缺失与 hit 无关）', () => {
+    const origin = new OriginForPick()
+    const { engineRoot, mesh, picking, dom } = makePickScene(origin)
+    delete (mesh.userData as { entityKey?: string }).entityKey // 未注册普通几何
+    mesh.position.set(5, 0, 0)
+    origin.set(-10, 0, 0)
+    engineRoot.position.copy(origin.offset)
+    engineRoot.updateMatrixWorld(true)
+    const renderPos = new THREE.Vector3(5, 0, 0).add(origin.offset)
+    camera.position.set(renderPos.x, renderPos.y, renderPos.z + 10)
+    camera.lookAt(renderPos)
+    camera.updateMatrixWorld(true)
+
+    const got: Array<{ entity?: unknown; localPoint?: { x: number; y: number; z: number } }> = []
+    picking.onPick((e) => got.push(e))
+    dom.click()
+
+    expect(got).toHaveLength(1)
+    expect(got[0]!.entity).toBeUndefined()
+    // hit：point 存在（≈逻辑 x=5 的盒表面，已恢复逻辑坐标）
+    expect(got[0]!.localPoint).toBeDefined()
+    expect(got[0]!.localPoint!.x).toBeCloseTo(5, 3)
+  })
+
+  it('#36：命中逻辑原点 {0,0,0} 与 miss 结构上可确定区分', () => {
+    const origin = new OriginForPick()
+    const { engineRoot, mesh, picking, dom } = makePickScene(origin)
+    delete (mesh.userData as { entityKey?: string }).entityKey
+    mesh.position.set(0, 0, 0) // 逻辑原点——合法业务坐标
+    origin.set(-500, 0, 0) // 非零 offset 下仍不得混淆
+    engineRoot.position.copy(origin.offset)
+    engineRoot.updateMatrixWorld(true)
+    const renderPos = new THREE.Vector3(0, 0, 0).add(origin.offset)
+    camera.position.set(renderPos.x, renderPos.y, renderPos.z + 10)
+    camera.lookAt(renderPos)
+    camera.updateMatrixWorld(true)
+
+    const got: Array<{ entity?: unknown; localPoint?: { x: number; y: number; z: number } }> = []
+    picking.onPick((e) => got.push(e))
+    dom.click()
+
+    expect(got).toHaveLength(1)
+    // 这是真实 hit（point 存在），而不是 sentinel——与 miss 可判别
+    expect(got[0]!.localPoint).toBeDefined()
+    // 射线命中逻辑原点处盒体的 +z 前表面（z=+1），x/y 即原点
+    expect(got[0]!.localPoint!.x).toBeCloseTo(0, 3)
+    expect(got[0]!.localPoint!.y).toBeCloseTo(0, 3)
+    expect(got[0]!.localPoint!.z).toBeCloseTo(1, 3)
   })
 })
 

@@ -68,10 +68,13 @@ export class PickingSystem {
     )
     this.raycaster.setFromCamera(ndc, camera)
     const hits = this.raycaster.intersectObject(root, true)
-    const hit = hits.find((h) => findEntityKey(h.object) !== undefined)
+    // Issue #36：最近命中优先——命中无 entityKey 的普通几何也是合法 hit
+    //（entity === undefined ≠ miss）；此前只报 entity 命中会让 miss 与
+    // 逻辑原点命中在 public API 上不可区分
+    const hit = hits[0]
     // Issue #29 同类边界：render-world → logical，floating-origin 不外泄；
-    // 无命中的原点是合成哨兵（非 render-space 坐标），不做变换
-    let localPoint = { x: 0, y: 0, z: 0 }
+    // miss（无 hit）不做变换，也不产生合成哨兵坐标
+    let localPoint: { x: number; y: number; z: number } | undefined
     if (hit) {
       this.renderToLogical?.(hit.point)
       localPoint = { x: hit.point.x, y: hit.point.y, z: hit.point.z }

@@ -22,9 +22,14 @@ export interface PickEvent {
   /**
    * 命中点的 **Engine 逻辑 scene 坐标**（SITE: frame-local m；GLOBAL:
    * scene-axis ECEF km）——不含 floating-origin/camera-relative render
-   * shift（Issue #29 同类坐标边界，引擎负责恢复）。无命中时为原点。
+   * shift（Issue #29 同类坐标边界，引擎负责恢复）。
+   *
+   * Issue #36：`localPoint === undefined` 表示未命中任何几何（miss）；
+   * 命中不含 entityKey 的普通几何时 localPoint 仍存在而 entity 为
+   * undefined——以 point 的存在性表达 hit，不用合法坐标 {0,0,0} 充当
+   * miss sentinel（逻辑原点是合法业务坐标）。
    */
-  localPoint: Vec3d
+  localPoint?: Vec3d
 }
 
 export type MapEngineState = 'UNINITIALIZED' | 'ACTIVE' | 'SUSPENDED' | 'DISPOSED'
