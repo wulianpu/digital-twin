@@ -44,11 +44,18 @@ export interface AssetApiOptions {
   /**
    * GLTFLoader 装配钩子（I4-2）：KTX2 / DRACO / meshopt 解码器在应用层
    * 组合注入（组合根持有 renderer 与部署配置，平台层保持无感知）。
+   *
    * #12-r2：enhancer reject 视为装配瞬时失败——manager 会清除失败
-   * attempt 并在下一次 acquire 重试重建；enhancer 若已半初始化
-   * （Worker/KTX2/DRACO 等 disposable），须自行回滚其资源。
+   * attempt 并在下一次 acquire 重试重建。
+   * #12-r3：enhancer 可返回 disposer（函数或 { dispose() }），把
+   * DRACO/KTX2 worker 等 decoder-stack 资源的 ownership 转移给
+   * manager——manager dispose() 时 exactly-once 回收；装配期间 terminal
+   * 的 late stack 立即回收，不 commit READY。enhancer 若在 reject 前
+   * 已创建部分资源，须自行回滚（返回值只覆盖成功路径的归属转移）。
    */
-  gltfLoaderEnhancer?: (loader: unknown) => Promise<void> | void
+  gltfLoaderEnhancer?: (
+    loader: unknown
+  ) => void | GltfStackDisposable | Promise<void | GltfStackDisposable>
 }
 
 interface CacheEntry {
@@ -88,6 +95,9 @@ export class AssetLeaseManager implements AssetApi {
   /** exactly-once dispose 的 identity 账本（WeakSet 不阻止 GC）。 */
   private readonly disposedAssets = new WeakSet<LoadedAsset>()
   private gltfLoader: Promise<GLTFLoaderLike> | undefined
+  /** #12-r3：manager 拥有的 decoder-stack disposer（enhancer 转移）。 */
+  private gltfStackDisposer: (() => void) | undefined
+  private gltfStackDisposed = false
   private disposed = false
 
   constructor(private readonly options: AssetApiOptions) {
@@ -230,6 +240,11 @@ export class AssetLeaseManager implements AssetApi {
     // #12-r2：loader factory 经 rejection-safe single-flight 获取——
     // build/enhancer 的 rejected Promise 不得永久占据 gltfLoader 缓存
     const loader = await this.getGltfLoader()
+    // #12-r3：terminal revalidation——dispose 后不得再启动新的
+    // 网络/parse/decode 工作（loadAsync 是 manager 终态后的第一笔新开销）
+    if (this.disposed) {
+      throw new Error('[scene-engine] asset manager disposed (loadGltf aborted)')
+    }
     const gltf = await loader.loadAsync(url)
     const scene = gltf.scene
     return {
@@ -246,7 +261,15 @@ export class AssetLeaseManager implements AssetApi {
     const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')
     const loader = new GLTFLoader() as unknown as GLTFLoaderLike
     // I4-2: 解码器装配在应用层完成（组合根注入）。
-    await this.options.gltfLoaderEnhancer?.(loader)
+    const ownership = await this.options.gltfLoaderEnhancer?.(loader)
+    // #12-r3：装配期间 terminal——enhancer 创建的 decoder stack 立即回收，
+    // 不写回 cache、不 commit READY（#14 同类 late-result 不变量）
+    if (this.disposed) {
+      toGltfStackDisposer(ownership)?.()
+      throw new Error('[scene-engine] asset manager disposed during loader build')
+    }
+    this.gltfStackDisposer = toGltfStackDisposer(ownership)
+    this.gltfStackDisposed = false
     return loader
   }
 
@@ -270,13 +293,27 @@ export class AssetLeaseManager implements AssetApi {
       this.gltfLoader = attempt
     }
     try {
-      return await attempt
+      const loader = await attempt
+      // #12-r3：装配期间 terminal——late READY stack 立即回收，不 commit
+      if (this.disposed) {
+        this.disposeGltfStackOnce()
+        throw new Error('[scene-engine] asset manager disposed during loader build')
+      }
+      return loader
     } catch (error) {
       if (this.gltfLoader === attempt) {
         this.gltfLoader = undefined
       }
       throw error
     }
+  }
+
+  /** #12-r3：decoder-stack exactly-once 回收（manager 是 terminal owner）。 */
+  private disposeGltfStackOnce(): void {
+    if (this.gltfStackDisposed) return
+    this.gltfStackDisposed = true
+    this.gltfStackDisposer?.()
+    this.gltfStackDisposer = undefined
   }
 
   /**
@@ -325,6 +362,10 @@ export class AssetLeaseManager implements AssetApi {
       }
     }
     this.cache.clear()
+    // #12-r3：manager 是 GLTF decoder-stack 的 terminal owner——
+    // LoadedAsset 之外，worker/blob URL 等 loader 基础设施一并回收
+    this.disposeGltfStackOnce()
+    this.gltfLoader = undefined
   }
 }
 
@@ -373,4 +414,19 @@ function isTextureLike(value: unknown): value is TextureLike {
 
 interface Disposable3D {
   traverse?(cb: (obj: unknown) => void): void
+}
+
+/** #12-r3：enhancer 可返回的 decoder-stack 归属凭据。 */
+export interface GltfStackDisposable {
+  dispose(): void
+}
+
+/** #12-r3：函数或 { dispose() } 两种归属凭据统一为 disposer。 */
+function toGltfStackDisposer(ownership: unknown): (() => void) | undefined {
+  if (!ownership) return undefined
+  if (typeof ownership === 'function') return ownership as () => void
+  if (typeof (ownership as { dispose?: unknown }).dispose === 'function') {
+    return () => (ownership as { dispose(): void }).dispose()
+  }
+  return undefined
 }

@@ -315,6 +315,57 @@ function tinyGlbDataUrl(): string {
     expect(calls).toBe(1)
   })
 
+  it('#12-r3：enhancer 返回 disposer → manager.dispose() exactly-once 回收 decoder stack', async () => {
+    const stackDispose = vi.fn()
+    const manager = new AssetLeaseManager({
+      resolve: (ref) =>
+        ref.id === 'tiny' ? { ref, kind: 'glb' as const, url: tinyGlbDataUrl() } : undefined,
+      gltfLoaderEnhancer: async () => ({ dispose: stackDispose })
+    })
+    const lease = await manager.acquire({ id: 'tiny' })
+    expect(stackDispose).not.toHaveBeenCalled()
+    manager.dispose()
+    expect(stackDispose).toHaveBeenCalledTimes(1)
+    manager.dispose() // 幂等
+    expect(stackDispose).toHaveBeenCalledTimes(1)
+    lease.release() // 旧 lease 释放不 double-dispose stack
+    expect(stackDispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('#12-r3：装配 pending → dispose → enhancer late resolve → stack 立即回收且不 commit', async () => {
+    let releaseEnhancer!: (ownership: { dispose(): void }) => void
+    const gate = new Promise<{ dispose(): void }>((res) => {
+      releaseEnhancer = res
+    })
+    const stackDispose = vi.fn()
+    const manager = new AssetLeaseManager({
+      resolve: (ref) =>
+        ref.id === 'tiny' ? { ref, kind: 'glb' as const, url: tinyGlbDataUrl() } : undefined,
+      gltfLoaderEnhancer: () => gate
+    })
+    const acquirePromise = manager.acquire({ id: 'tiny' }) // enhancer pending
+    manager.dispose() // terminal——装配仍在途
+    releaseEnhancer({ dispose: stackDispose }) // late resolve
+
+    // late stack 立即回收、不 commit READY、绝不进入 loadAsync
+    await expect(acquirePromise).rejects.toThrowError(/disposed during loader build/)
+    expect(stackDispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('#12-r3：terminal 后不得再启动 loadAsync（网络/解码工作不新增）', async () => {
+    const manager = new AssetLeaseManager({
+      resolve: (ref) =>
+        ref.id === 'broken' ? { ref, kind: 'glb' as const, url: 'data:model/gltf-binary;base64,AAAA' } : undefined,
+      gltfLoaderEnhancer: async () => undefined
+    })
+    manager.dispose()
+    // acquire 入口 fail-fast（零工作启动）；pending 路径由 loadGltf 的
+    // terminal revalidation 兜底——两层都不可能进入 GLTF parse/网络层
+    await expect(manager.acquire({ id: 'broken' })).rejects.toThrowError(
+      /asset manager disposed \(Issue #12 terminal state\)/
+    )
+  })
+
   it('#12-r2：并发 GLTF acquire 共享一次 loader build（single-flight 不回退）', async () => {
     let calls = 0
     const manager = new AssetLeaseManager({

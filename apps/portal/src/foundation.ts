@@ -335,6 +335,9 @@ const world = createWorldApi({
   const assets = createAssetApi({
     resolve: (ref) => content.getAsset(ref),
     maxTotalBytes: 256 * 1024 * 1024,
+    // Issue #12-r3：enhancer 返回 disposer——DRACO/KTX2 worker 等 decoder
+    // stack 资源的 ownership 转移给 manager，foundation teardown 时随
+    // assets.dispose() exactly-once 回收（不再有 session 间累积的 worker）。
     gltfLoaderEnhancer: async (loader) => {
       const l = loader as {
         setDRACOLoader(d: unknown): void
@@ -345,13 +348,32 @@ const world = createWorldApi({
       const draco = new DRACOLoader()
       draco.setDecoderPath(config.assetDecoderPath)
       l.setDRACOLoader(draco)
+      let ktx2: { dispose(): void } | undefined
       try {
         const { KTX2Loader } = await import('three/examples/jsm/loaders/KTX2Loader.js')
-        const ktx2 = new KTX2Loader()
-        ktx2.setTranscoderPath(config.assetDecoderPath)
-        const renderer = graphicsAccess.currentContext?.renderer
-        if (renderer) ktx2.detectSupport(renderer)
-        l.setKTX2Loader?.(ktx2)
+        const k = new KTX2Loader()
+        k.setTranscoderPath(config.assetDecoderPath)
+        // Issue #12-r3：KTX2 capability 不依赖装配时刻的时序偶然性——
+        // renderer 未就绪时有界等待 graphics boot，超时显式 fail-fast；
+        // 绝不缓存未 detectSupport 的 KTX2Loader（后续 KTX2 GLB 会确定性
+        // 抛 "Missing initialization with .detectSupport(renderer)."）
+        const deadline = Date.now() + 10_000
+        for (;;) {
+          const renderer = graphicsAccess.currentContext?.renderer
+          if (renderer) {
+            k.detectSupport(renderer)
+            break
+          }
+          if (Date.now() > deadline) {
+            k.dispose()
+            throw new Error(
+              '[portal] KTX2 decoder needs graphics boot (detectSupport); timed out waiting for renderer'
+            )
+          }
+          await new Promise((r) => setTimeout(r, 250))
+        }
+        ktx2 = k
+        l.setKTX2Loader?.(k)
       } catch (error) {
         console.info('[portal] KTX2 解码器不可用，压缩纹理资产将无法加载', error)
       }
@@ -360,6 +382,13 @@ const world = createWorldApi({
         l.setMeshoptDecoder?.(MeshoptDecoder)
       } catch (error) {
         console.info('[portal] meshopt 解码器不可用，跳过', error)
+      }
+      // decoder stack ownership → AssetLeaseManager（terminal owner）
+      return {
+        dispose: () => {
+          draco.dispose()
+          ktx2?.dispose()
+        }
       }
     }
   })
