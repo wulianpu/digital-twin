@@ -375,6 +375,53 @@ describe('Portal frame-mode authority（Issue #31）', () => {
     expect(created[1]!.mountContainer.children.length).toBe(0)
   })
 
+  // ---- Issue #32：mode-specific resource policy + aggregate diagnostics ----
+
+  it('#32：SITE-only 资源策略不进 GLOBAL runtime（tiles/stateBuffer/water/getActiveFrame）', async () => {
+    const { foundation, created } = await buildWithFactory()
+    // 先 boot GLOBAL（初始 scope）
+    await foundation.graphicsAccess.use()
+    expect(created[0]!.opts.global).toBe(true)
+    // SITE-only 资源不在 GLOBAL options 中——GLOBAL 不得消费 Site 3D Tiles
+    expect(created[0]!.opts.tiles).toBeUndefined()
+    expect(created[0]!.opts.water).toBeUndefined()
+    expect(created[0]!.opts.getActiveFrame).toBeUndefined()
+    expect(created[0]!.opts.stateBuffer).toBeUndefined()
+
+    // 进入 SITE：SITE options 携带全部 SITE-only 资源
+    foundation.world.setScope({ kind: 'site', siteId: 'site-changxing' })
+    await foundation.graphicsAccess.use()
+    expect(created[1]!.opts.global).not.toBe(true)
+    expect(created[1]!.opts.tiles).toBeDefined()
+    expect(created[1]!.opts.stateBuffer).toBeDefined()
+    expect(created[1]!.opts.getActiveFrame).toBeTypeOf('function')
+
+    // GLOBAL → SITE → GLOBAL round-trip 不为 SITE 资源创建第二份 runtime
+    foundation.world.setScope({ kind: 'global' })
+    await foundation.graphicsAccess.use()
+    expect(created).toHaveLength(2)
+    // 两 runtime 各自 options 无交叉污染
+    expect(created[0]!.opts.tiles).toBeUndefined()
+    expect(created[1]!.opts.tiles).toBeDefined()
+  })
+
+  it('#32：getAggregateDiagnostics 提供双 runtime breakdown 与 totals，且不改变 lifecycle', async () => {
+    const { foundation, created } = await buildWithFactory()
+    await foundation.graphicsAccess.use() // global boot
+    foundation.world.setScope({ kind: 'site', siteId: 'site-changxing' })
+    await foundation.graphicsAccess.use() // site boot
+
+    // fake runtime diagnostics.tiles 为 undefined → totals 为 0，但结构完整
+    const agg = foundation.graphicsAccess.getAggregateDiagnostics()
+    expect(agg.activeMode).toBe('site')
+    expect(agg.global).toBeDefined()
+    expect(agg.site).toBeDefined()
+    expect(agg.totals).toEqual({ tilesCachedBytes: 0 })
+    // 纯读取：不 suspend/resume 任何一侧
+    expect(created[0]!.suspend).toHaveBeenCalledTimes(created[0]!.suspend.mock.calls.length)
+    expect(created[1]!.suspend).toHaveBeenCalledTimes(created[1]!.suspend.mock.calls.length)
+  })
+
   it('#31-r3：dispose 与 context resolve 交错——未 transfer 的 root 先 detach 再 reject（隔离单元）', async () => {
     // 直接构造 mock access，精确控制 context resolve 与 dispose 的交错
     const mkMock = () => {
@@ -417,5 +464,44 @@ describe('Portal frame-mode authority（Issue #31）', () => {
     expect(g.root.parent).toBeNull()
     expect(g.suspend).toHaveBeenCalled()
     expect(g.access.resume).not.toHaveBeenCalled()
+  })
+
+  it('#32：aggregate totals 汇总双 runtime retained tiles cache（含 inactive 侧）', () => {
+    const diag = (tilesBytes: number) =>
+      ({
+        quality: 'HIGH',
+        frame: { fps: 60, p50Ms: 16, p95Ms: 20, frameIndex: 1 },
+        renderer: { drawCalls: 0, triangles: 0, textures: 0, geometries: 0, programs: 0 },
+        tiles: { cachedBytes: tilesBytes, maxBytes: 1000, isFull: false, loadProgress: 1, queued: 0, downloading: 0, parsing: 0, loaded: 0, visible: 0, active: 0, failed: 0 },
+        entityCount: 0,
+        frameCallbacks: 0,
+        assetLeases: 0,
+        jsHeapMB: undefined
+      }) as unknown as GraphicsDiagnostics
+    const mk = (bytes: number) => {
+      const access: GraphicsAccess = {
+        use: vi.fn(),
+        state: 'ACTIVE' as const,
+        currentContext: undefined,
+        applyQuality: vi.fn(),
+        suspend: vi.fn(),
+        resume: vi.fn(),
+        getDiagnostics: () => diag(bytes),
+        dispose: vi.fn()
+      }
+      return access
+    }
+    const router = createModeRoutingGraphicsAccess({
+      resolveMode: () => 'site',
+      global: mk(300),
+      site: mk(220),
+      viewport: () => undefined
+    })
+    const agg = router.getAggregateDiagnostics()
+    // inactive global 的 300B 也计入——active-only 口径会低估 aggregate footprint
+    expect(agg.activeMode).toBe('site')
+    expect(agg.global?.tiles?.cachedBytes).toBe(300)
+    expect(agg.site?.tiles?.cachedBytes).toBe(220)
+    expect(agg.totals.tilesCachedBytes).toBe(520)
   })
 })

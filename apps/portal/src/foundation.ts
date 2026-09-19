@@ -269,41 +269,57 @@ const world = createWorldApi({
   // 混合 Scene catalog（global-ships 要求 global env，SITE Scene 要求
   // frame-local meters）。frame mode 的唯一 authority 是 world.session.scope，
   // 由 frameMode router 在 mount 的 use() 时刻提交。
-  const graphicsRuntimeOptions: SceneEngineOptions = {
+  //
+  // Issue #32：mode-specific resource policy——禁止 `{ ...site, global: true }`
+  // 式浅拷贝。common 只含 frame-neutral 能力；SITE-only 资源/策略（Fast Path
+  // buffer 的 frame-local meters 语义、Site 3D Tiles、site frame、水体）只进
+  // SITE runtime。
+  const commonGraphicsOptions = {
     getViewport: () => containers.graphics,
     spatial,
-    stateBuffer,
     quality: config.defaultQuality,
-    maxQuality: 'EXHIBITION',
+    maxQuality: 'EXHIBITION' as const,
     // Issue #15：Scene callback 故障可观测（quarantine 由引擎负责，
     // 去向由 Composition Root 决定）
-    onCallbackError: (error, meta) => {
+    onCallbackError: (error: unknown, meta: { kind: 'frame' | 'pick' }) => {
       console.error(`[portal] scene ${meta.kind} callback failed (quarantined)`, error)
     },
-    // I4-3：真实 3D Tiles 入口（经 TilesSystem，诊断随 getDiagnostics 输出）。
+    getAssetLeaseCount: () => assets.leaseCount
+  }
+  const siteGraphicsOptions: SceneEngineOptions = {
+    ...commonGraphicsOptions,
+    // Fast Path buffer 语义 = SITE frame-local meters——GLOBAL 侧禁止消费
+    //（EntitySystem 若以 km 语义读取 SITE-frame pose 会产生单位错误）
+    stateBuffer,
+    // I4-3：Site 3D Tiles——SITE runtime 是其唯一 owner；tilesMaxBytes 语义
+    // 为 Portal aggregate 预算，V1 只有 SITE 消费 tiles，故全额归属 SITE，
+    // aggregate ceiling 恒等于 config.tilesMaxBytes 不翻倍。
     tiles: {
       maxBytes: config.tilesMaxBytes,
       maxItems: 4096,
       sseMultiplier: 12,
       ...(config.tilesTilesetUrl ? { tilesetUrls: [config.tilesTilesetUrl] } : {})
     },
-    visualFixture: config.visualFixture,
     water: { enabled: true, halfSizeMeters: 4000 },
     getActiveFrame: () => {
       const scope = world.session.scope
       if (scope.kind !== 'site') return undefined
       return spatial.getFrame(`frame:${scope.siteId}`)
-    },
-    getAssetLeaseCount: () => assets.leaseCount
+    }
+  }
+  // #32：V1 不支持 GLOBAL tiles（SITE tileset 在 ECEF-km camera-relative
+  // 层级没有 placement contract）——GLOBAL 不注入 tiles/water/getActiveFrame；
+  // 未来支持 GLOBAL tiles 需独立 descriptor + ECEF→scene-km placement
+  // contract + 从 aggregate 预算显式分片。
+  const globalGraphicsOptions: SceneEngineOptions = {
+    ...commonGraphicsOptions,
+    global: true
   }
   const runtimeDeps = options.graphicsRuntimeFactory
     ? { createRuntime: options.graphicsRuntimeFactory }
     : {}
-  const siteGraphicsAccess = createGraphicsAccess(graphicsRuntimeOptions, runtimeDeps)
-  const globalGraphicsAccess = createGraphicsAccess(
-    { ...graphicsRuntimeOptions, global: true },
-    runtimeDeps
-  )
+  const siteGraphicsAccess = createGraphicsAccess(siteGraphicsOptions, runtimeDeps)
+  const globalGraphicsAccess = createGraphicsAccess(globalGraphicsOptions, runtimeDeps)
   const graphicsAccess = createModeRoutingGraphicsAccess({
     resolveMode: () => (world.session.scope.kind === 'global' ? 'global' : 'site'),
     global: globalGraphicsAccess,

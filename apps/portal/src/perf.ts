@@ -151,6 +151,9 @@ export function setupPerfAutomation(
         sampleHeap: heapMB,
         sampleResources: () => {
           const d = foundation.graphicsAccess.getDiagnostics()
+          // Issue #32：active-only 口径会隐藏非活跃 runtime 的 retained
+          // tiles cache——soak/plateau gate 必须读 aggregate。
+          const agg = foundation.graphicsAccess.getAggregateDiagnostics()
           return {
             textures: d?.renderer.textures,
             geometries: d?.renderer.geometries,
@@ -159,6 +162,7 @@ export function setupPerfAutomation(
             assetLeases: d?.assetLeases,
             entityCount: d?.entityCount,
             tilesBytes: d?.tiles?.cachedBytes,
+            tilesBytesAggregate: agg.totals.tilesCachedBytes,
             jsHeapMB: d?.jsHeapMB ?? heapMB()
           }
         },

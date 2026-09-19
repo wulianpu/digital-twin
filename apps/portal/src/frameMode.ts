@@ -34,6 +34,21 @@ export interface ModeRoutingGraphicsAccess extends GraphicsAccess {
   readonly mode: FrameMode
   /** 当前已提交 mode 对应的底层 access（View binding 与 graphics 同源）。 */
   readonly active: GraphicsAccess
+  /**
+   * #32：双 Runtime retained 资源的 aggregate 视图——active-only 的
+   * getDiagnostics() 看不到非活跃 runtime 保留的 tiles cache/renderer，
+   * perf/soak 必须能读取 aggregate。纯读取，不改变任何 lifecycle。
+   */
+  getAggregateDiagnostics(): AggregateGraphicsDiagnostics
+}
+
+/** #32：双 Runtime 资源 breakdown（undefined = 该侧尚未 boot）。 */
+export interface AggregateGraphicsDiagnostics {
+  activeMode: FrameMode
+  global: GraphicsDiagnostics | undefined
+  site: GraphicsDiagnostics | undefined
+  /** 两 retained tiles cache 之和——aggregate 预算观测口径。 */
+  totals: { tilesCachedBytes: number }
 }
 
 export function createModeRoutingGraphicsAccess(args: {
@@ -156,6 +171,19 @@ export function createModeRoutingGraphicsAccess(args: {
     },
     getDiagnostics(): GraphicsDiagnostics | undefined {
       return accessFor(committed).getDiagnostics()
+    },
+    getAggregateDiagnostics(): AggregateGraphicsDiagnostics {
+      const globalDiag = args.global.getDiagnostics()
+      const siteDiag = args.site.getDiagnostics()
+      return {
+        activeMode: committed,
+        global: globalDiag,
+        site: siteDiag,
+        totals: {
+          tilesCachedBytes:
+            (globalDiag?.tiles?.cachedBytes ?? 0) + (siteDiag?.tiles?.cachedBytes ?? 0)
+        }
+      }
     },
     dispose() {
       if (disposed) return
