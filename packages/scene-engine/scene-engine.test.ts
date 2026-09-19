@@ -204,44 +204,44 @@ describe('AssetLeaseManager 内存预算与解码器装配 (I4-2)', () => {
     expect(manager.estimatedBytesTotal).toBe(0)
   })
 
-  it('gltfLoaderEnhancer 在 GLB 解析前被调用（data: URL 全链路）', async () => {
-    // 最小 GLB：一个三角形（POSITION only）
-    const gltf = {
-      asset: { version: '2.0' },
-      scene: 0,
-      scenes: [{ nodes: [0] }],
-      nodes: [{ mesh: 0 }],
-      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
-      accessors: [
-        { bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }
-      ],
-      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
-      buffers: [{ byteLength: 36 }]
-    }
-    const bin = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer)
-    const json = Buffer.from(JSON.stringify(gltf), 'utf8')
-    const total = 12 + 8 + json.length + 8 + bin.length
-    const glb = Buffer.alloc(total)
-    const view = new DataView(glb.buffer)
-    view.setUint32(0, 0x46546c67, true)
-    view.setUint32(4, 2, true)
-    view.setUint32(8, total, true)
-    view.setUint32(12, json.length, true)
-    view.setUint32(16, 0x4e4f534a, true)
-    json.copy(glb, 20)
-    view.setUint32(20 + json.length, bin.length, true)
-    view.setUint32(24 + json.length, 0x004e4942, true)
-    bin.copy(glb, 28 + json.length)
 
+/** 最小 GLB：一个三角形（POSITION only），编码为 data: URL（供真实 GLTFLoader 全链路测试） */
+function tinyGlbDataUrl(): string {
+  const gltf = {
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }
+    ],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+    buffers: [{ byteLength: 36 }]
+  }
+  const bin = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer)
+  const json = Buffer.from(JSON.stringify(gltf), 'utf8')
+  const total = 12 + 8 + json.length + 8 + bin.length
+  const glb = Buffer.alloc(total)
+  const view = new DataView(glb.buffer)
+  view.setUint32(0, 0x46546c67, true)
+  view.setUint32(4, 2, true)
+  view.setUint32(8, total, true)
+  view.setUint32(12, json.length, true)
+  view.setUint32(16, 0x4e4f534a, true)
+  json.copy(glb, 20)
+  view.setUint32(20 + json.length, bin.length, true)
+  view.setUint32(24 + json.length, 0x004e4942, true)
+  bin.copy(glb, 28 + json.length)
+  return `data:model/gltf-binary;base64,${glb.toString('base64')}`
+}
+
+  it('gltfLoaderEnhancer 在 GLB 解析前被调用（data: URL 全链路）', async () => {
     const enhanced: unknown[] = []
     const manager = new AssetLeaseManager({
       resolve: (ref) =>
         ref.id === 'tiny'
-          ? {
-              ref,
-              kind: 'glb' as const,
-              url: `data:model/gltf-binary;base64,${glb.toString('base64')}`
-            }
+          ? { ref, kind: 'glb' as const, url: tinyGlbDataUrl() }
           : undefined,
       gltfLoaderEnhancer: async (loader) => {
         enhanced.push(loader)
@@ -264,6 +264,77 @@ describe('AssetLeaseManager 内存预算与解码器装配 (I4-2)', () => {
       }
     })
     await expect(manager.acquire({ id: 'tiny' })).rejects.toThrowError(/decoder setup failed/)
+  })
+
+  // ---- Issue #12-r2：loader factory 自身的 rejection-safe single-flight ----
+
+  it('#12-r2：enhancer 首次 reject 后，下一次 acquire 真实重建 loader 并成功（不永久中毒）', async () => {
+    let calls = 0
+    const manager = new AssetLeaseManager({
+      resolve: (ref) =>
+        ref.id === 'tiny'
+          ? { ref, kind: 'glb' as const, url: tinyGlbDataUrl() }
+          : undefined,
+      gltfLoaderEnhancer: async (loader) => {
+        calls++
+        if (calls === 1) throw new Error('decoder setup transient failure')
+        enhanced.push(loader)
+      }
+    })
+    const enhanced: unknown[] = []
+    // 第一次：build/enhancer reject——旧实现会永久缓存 rejected Promise
+    await expect(manager.acquire({ id: 'tiny' })).rejects.toThrowError(
+      /decoder setup transient failure/
+    )
+    // 第二次：必须重新 build/enhance（identity 清除失败 attempt），并真实成功
+    const lease = await manager.acquire({ id: 'tiny' })
+    expect(calls).toBe(2)
+    expect(enhanced).toHaveLength(1)
+    const scene = lease.object as { children: Array<unknown> }
+    expect(scene.children.length).toBeGreaterThan(0)
+    lease.release()
+  })
+
+  it('#12-r2：健康 loader 不因单个资产 loadAsync 失败而重建', async () => {
+    let calls = 0
+    const manager = new AssetLeaseManager({
+      resolve: (ref) =>
+        ref.id === 'broken'
+          ? { ref, kind: 'glb' as const, url: 'data:model/gltf-binary;base64,AAAA' }
+          : undefined,
+      gltfLoaderEnhancer: async () => {
+        calls++
+      }
+    })
+    // 资产数据损坏 → loadAsync/parse 层失败（loader 本身健康）
+    await expect(manager.acquire({ id: 'broken' })).rejects.toThrow()
+    await expect(manager.acquire({ id: 'broken' })).rejects.toThrow()
+    // loader factory 只装配一次——资产失败不得销毁已初始化的共享 loader
+    expect(calls).toBe(1)
+  })
+
+  it('#12-r2：并发 GLTF acquire 共享一次 loader build（single-flight 不回退）', async () => {
+    let calls = 0
+    const manager = new AssetLeaseManager({
+      resolve: (ref) =>
+        ref.id === 'tiny'
+          ? { ref, kind: 'glb' as const, url: tinyGlbDataUrl() }
+          : undefined,
+      gltfLoaderEnhancer: async (loader) => {
+        calls++
+        await new Promise((r) => setTimeout(r, 20)) // 拉长 build 窗口
+        enhanced.push(loader)
+      }
+    })
+    const enhanced: unknown[] = []
+    const [a, b] = await Promise.all([
+      manager.acquire({ id: 'tiny' }),
+      manager.acquire({ id: 'tiny' })
+    ])
+    expect(calls).toBe(1)
+    expect(enhanced).toHaveLength(1)
+    a.release()
+    b.release()
   })
 })
 

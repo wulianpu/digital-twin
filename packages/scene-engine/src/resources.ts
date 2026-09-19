@@ -44,6 +44,9 @@ export interface AssetApiOptions {
   /**
    * GLTFLoader 装配钩子（I4-2）：KTX2 / DRACO / meshopt 解码器在应用层
    * 组合注入（组合根持有 renderer 与部署配置，平台层保持无感知）。
+   * #12-r2：enhancer reject 视为装配瞬时失败——manager 会清除失败
+   * attempt 并在下一次 acquire 重试重建；enhancer 若已半初始化
+   * （Worker/KTX2/DRACO 等 disposable），须自行回滚其资源。
    */
   gltfLoaderEnhancer?: (loader: unknown) => Promise<void> | void
 }
@@ -224,8 +227,9 @@ export class AssetLeaseManager implements AssetApi {
   }
 
   private async loadGltf(url: string, descriptor: AssetDescriptor): Promise<LoadedAsset> {
-    this.gltfLoader ??= this.buildGltfLoader()
-    const loader = await this.gltfLoader
+    // #12-r2：loader factory 经 rejection-safe single-flight 获取——
+    // build/enhancer 的 rejected Promise 不得永久占据 gltfLoader 缓存
+    const loader = await this.getGltfLoader()
     const gltf = await loader.loadAsync(url)
     const scene = gltf.scene
     return {
@@ -244,6 +248,35 @@ export class AssetLeaseManager implements AssetApi {
     // I4-2: 解码器装配在应用层完成（组合根注入）。
     await this.options.gltfLoaderEnhancer?.(loader)
     return loader
+  }
+
+  /**
+   * #12-r2：loader factory 的 rejection-safe single-flight——
+   * CacheEntry 层的重试必须能真正重建 loader，否则一次瞬时的
+   * enhancer/动态 import 失败会让当前 manager 内所有后续 GLTF acquire
+   * 永久命中同一个 rejected Promise（只有重建 Foundation 才能恢复）。
+   *
+   * 不变量：
+   * 1. 并发 GLTF acquire 共享一次 loader build（single-flight 不变）；
+   * 2. build/enhancer reject 后按 promise identity 清除失败 attempt，
+   *    不误清后来成功建立的新 loader；
+   * 3. 已成功初始化的健康 loader 不因单个资产的 loadAsync 失败被销毁
+   *    （asset parse/网络错误 ≠ loader factory 失败）。
+   */
+  private async getGltfLoader(): Promise<GLTFLoaderLike> {
+    let attempt = this.gltfLoader
+    if (!attempt) {
+      attempt = this.buildGltfLoader()
+      this.gltfLoader = attempt
+    }
+    try {
+      return await attempt
+    } catch (error) {
+      if (this.gltfLoader === attempt) {
+        this.gltfLoader = undefined
+      }
+      throw error
+    }
   }
 
   /**
